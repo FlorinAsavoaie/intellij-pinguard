@@ -1,0 +1,19 @@
+# Build output
+.gradle/
+build/
+out/
+.kotlin/
+
+# IDEs downloaded by the IntelliJ Platform Gradle plugin. Tens of gigabytes:
+# committing this once is enough to make the repository unusable.
+.intellijPlatform/
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Per-machine developer config. .mcp.json carries a localhost port belonging to
+# one running IDE instance, so it is never right for anyone else.
+.claude/settings.local.json
+.mcp.json

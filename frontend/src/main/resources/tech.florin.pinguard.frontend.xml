@@ -1,0 +1,36 @@
+<!--
+  PinGuard's only content module, and where all of its behaviour is registered.
+
+  The file name is not decorative: the platform resolves a `<content>` module by
+  looking for a descriptor named after it, so this must stay in step with
+  META-INF/plugin.xml. PluginDescriptorTest asserts that it does.
+
+  Note the absence of `<depends>`, which a module descriptor may not use, and of
+  META-INF — a module descriptor sits at the resource root.
+-->
+<idea-plugin>
+    <dependencies>
+        <module name="intellij.platform.frontend"/>
+    </dependencies>
+
+    <resource-bundle>messages.PinGuardBundle</resource-bundle>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <virtualFilePreCloseCheck implementation="tech.florin.pinguard.PinnedTabCloseGuard"/>
+
+        <postStartupActivity implementation="tech.florin.pinguard.PinGuardCloseActions"/>
+
+        <applicationConfigurable
+                parentId="editor"
+                id="tech.florin.pinguard.settings"
+                instance="tech.florin.pinguard.PinGuardConfigurable"
+                key="settings.title"
+                bundle="messages.PinGuardBundle"/>
+
+        <!--
+          Reporting stays local: the button composes the issue and opens GitHub's
+          own form in the browser. Nothing leaves the IDE on its own.
+        -->
+        <errorHandler implementation="tech.florin.pinguard.PinGuardErrorSubmitter"/>
+    </extensions>
+</idea-plugin>

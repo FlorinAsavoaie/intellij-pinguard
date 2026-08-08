@@ -1,0 +1,49 @@
+<idea-plugin url="https://github.com/FlorinAsavoaie/intellij-pinguard">
+    <id>tech.florin.pinguard</id>
+    <name>PinGuard</name>
+    <vendor email="florin.asavoaie@easyhacks.net" url="https://florin.tech">
+        Florin Asăvoaie
+    </vendor>
+
+    <description><![CDATA[
+    <p>Keeps pinned editor tabs pinned.</p>
+
+    <p>Pinning a tab says "I want to keep this open". The tab's own close button
+    respects that, but <em>Close</em> (Cmd+W / Ctrl+F4), <em>Close All</em>,
+    <em>Close Others</em> and the rest of the tab context menu will still close a
+    pinned tab. PinGuard takes pinned tabs out of those commands.</p>
+
+    <p>Prefer a safety net over a hard stop? Turn on
+    <b>Settings | Editor | PinGuard | Ask for confirmation instead of blocking</b>
+    and you will be asked before a pinned tab closes, once per close rather than
+    once per tab.</p>
+
+    <p>A protected <em>Close All</em> still closes everything that is not pinned —
+    keeping a pin never strands the tabs you did mean to close. Unpinned tabs are
+    never affected, and closing a project, or the IDE is never interrupted.</p>
+
+    <p>Built for remote development and Code With Me: the guard ships as a
+    frontend module so it loads in the JetBrains Client, where the editor tabs
+    and the close commands actually live, rather than only on the backend. This
+    layout has not yet been confirmed against a live remote session — if you use
+    PinGuard that way, reports are welcome.</p>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <!--
+      This descriptor deliberately registers nothing. Every extension PinGuard has
+      is declared in the module below, because a close action can only be guarded
+      in the process that dispatches it — a monolithic IDE, or the JetBrains
+      Client in a remote development session, never the backend the plugin is
+      installed on.
+
+      `required` rather than the default `optional`: a missing
+      `intellij.platform.frontend` would leave the plugin installed, enabled, and
+      doing absolutely nothing, which is the exact failure this layout exists to
+      rule out. Failing loudly is the point.
+    -->
+    <content>
+        <module name="tech.florin.pinguard.frontend" loading="required"/>
+    </content>
+</idea-plugin>
