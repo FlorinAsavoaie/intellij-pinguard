@@ -3,6 +3,7 @@ package tech.florin.pinguard
 import com.intellij.ide.lightEdit.LightEditCompatible
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.actionSystem.ActionPromoter
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
@@ -11,7 +12,25 @@ import java.util.concurrent.atomic.AtomicBoolean
 private val LOG: Logger = Logger.getInstance(PinGuardActionGuards::class.java)
 
 /**
+ * The terminal's own "Close Tab", which is what Cmd+W runs in a terminal tab.
+ *
+ * Named rather than inlined because several tests have to talk about it: it is the
+ * one guarded id that belongs to a bundled plugin rather than to the platform, so
+ * what it does and what it is bound to are the platform's to change.
+ */
+internal const val TERMINAL_CLOSE_TAB: String = "Terminal.CloseTab"
+
+/**
  * The close actions PinGuard wraps, each mapped to how its targets are worked out.
+ *
+ * [TERMINAL_CLOSE_TAB] is here because guarding `CloseContent` does not cover the
+ * keystroke users think of as its own. The terminal plugin declares its own close
+ * with `use-shortcut-of="CloseContent"`, so both answer Cmd+W; the platform then
+ * asks every `ActionPromoter` to reorder the candidates and performs the first
+ * *enabled* one, and the terminal's promotes itself. A terminal moved into the
+ * editor and pinned there was therefore closed by an action PinGuard had never
+ * heard of. It reaches the same `CloseAction.CloseTarget` that `CloseContent`
+ * does, so [SingleTabScope] describes it exactly.
  *
  * Left out on purpose:
  *  - `CloseEditor`, the only action consulting `virtualFilePreCloseCheck`.
@@ -26,11 +45,15 @@ private val LOG: Logger = Logger.getInstance(PinGuardActionGuards::class.java)
  *    re-refuse closes that were never going to happen. `GuardedCloseActionTest`
  *    holds the platform to that behaviour, and if it ever changes these four come
  *    back and the reflection with them.
+ *  - `Terminal.CloseSession`, the terminal's Ctrl+D, which only writes EOF to the
+ *    shell. The tab that follows is closed by `TerminalViewFileEditor` when the
+ *    session terminates — programmatically, so no action-layer guard can see it.
  */
 internal val GUARDED: Map<String, CloseActionScope> = mapOf(
     "CloseContent" to SingleTabScope,
     "CloseAllEditors" to AllTabsScope,
     "CloseAllEditorsButActive" to OtherTabsScope,
+    TERMINAL_CLOSE_TAB to SingleTabScope,
 )
 
 /**
@@ -87,22 +110,31 @@ public class PinGuardActionGuards : Disposable {
             }
             if (original is GuardedCloseAction) return
 
-            // Branching on the marker rather than on the id keeps the wrapper from
-            // ever adding or dropping a capability the original did not carry,
-            // including for any action GUARDED grows.
-            actions.replaceAction(
-                id,
-                if (original is LightEditCompatible) {
-                    GuardedLightEditCloseAction(original, scope, selector, gate)
-                } else {
-                    GuardedCloseAction(original, scope, selector, gate)
-                },
-            )
+            actions.replaceAction(id, wrap(original, scope))
             displaced[id] = original
         } catch (failure: Throwable) {
             rethrowIfUnrecoverable(failure)
             LOG.warn("could not guard close action '$id'; it keeps its stock behaviour", failure)
         }
+    }
+
+    /**
+     * The wrapper for [original], carrying across whichever markers it had.
+     *
+     * Branching on the markers rather than on the id keeps a wrapper from ever
+     * adding or dropping a capability the original did not carry, including for any
+     * action [GUARDED] grows.
+     *
+     * No action the platform ships carries both markers, so there is no combined
+     * variant here and this reads them in a fixed order rather than as a matrix.
+     * `PinGuardActionGuardsTest` holds the platform to that: the day a guarded
+     * action is both [LightEditCompatible] and an [ActionPromoter], it fails rather
+     * than letting this silently drop one of the two.
+     */
+    private fun wrap(original: AnAction, scope: CloseActionScope): GuardedCloseAction = when (original) {
+        is LightEditCompatible -> GuardedLightEditCloseAction(original, scope, selector, gate)
+        is ActionPromoter -> GuardedPromotedCloseAction(original, scope, selector, gate)
+        else -> GuardedCloseAction(original, scope, selector, gate)
     }
 
     /**

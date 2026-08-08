@@ -27,6 +27,7 @@ would have taken, rather than putting one dialog in front of you per tab.
 | **Close All**, **Close Others** | Guarded by PinGuard. Every unpinned tab still closes. |
 | **Close to the Left** / **Right**, **Close Unmodified**, **Close Readonly** | Already leave pinned tabs alone — the IDE does this itself. |
 | **Close All Unpinned Tabs** | Untouched. It does exactly what its name says. |
+| A terminal moved into the editor with **Move to Editor** and pinned | Guarded by PinGuard, including its own **Close Tab** — see below. |
 | The tab's own **×** button | Not guarded — see below. |
 | Closing a project, or quitting the IDE | Never interrupted. |
 
@@ -38,6 +39,20 @@ Two consequences worth knowing:
 - **A pin anywhere counts.** A file is pinned if any editor window in any open
   project has it pinned, so a tab pinned in one split is protected from being
   closed in another.
+
+### Terminals in the editor
+
+The terminal ships a **Close Tab** of its own, bound to the same shortcut as the
+editor's **Close**, and it takes precedence when the terminal has focus. PinGuard
+guards it too, so <kbd>Cmd</kbd>+<kbd>W</kbd> respects a pin on a terminal tab
+just as it does on a file. Terminal tabs in the tool window are not editor tabs
+and cannot be pinned, so nothing there changes.
+
+One limit: ending the session still closes the tab. Typing `exit`, or
+<kbd>Ctrl</kbd>+<kbd>D</kbd> at an empty prompt, shuts the shell down, and the
+IDE then closes the tab programmatically rather than through any close action.
+PinGuard is not consulted, by design — the same reason it never interrupts
+closing a project.
 
 ### The tab's × button
 

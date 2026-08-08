@@ -3,7 +3,9 @@ package tech.florin.pinguard
 import com.intellij.ide.lightEdit.LightEditCompatible
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionPlaces
+import com.intellij.openapi.actionSystem.ActionPromoter
 import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.actionSystem.Presentation
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
@@ -271,5 +273,123 @@ internal class PinGuardActionGuardsTest {
         // it too would ask twice about the same close.
         assertFalse("CloseEditor" in GUARDED.keys)
         assertTrue(actions.getAction("CloseEditor") != null)
+    }
+
+    @Test
+    fun `Terminal_CloseTab shares CloseContent's shortcut, which is how it takes Cmd+W`() {
+        // The terminal plugin declares `use-shortcut-of="CloseContent"`, so a
+        // terminal tab moved into the editor is closed by *this* action on the
+        // keystroke users think of as CloseContent's. If that binding ever goes,
+        // guarding this id stops buying anything and this test says so.
+        val terminalClose = requireNotNull(actions.getAction(TERMINAL_CLOSE_TAB)) {
+            "'$TERMINAL_CLOSE_TAB' is not registered; the terminal plugin is missing from this test IDE"
+        }
+        val closeContent = requireNotNull(actions.getAction("CloseContent"))
+
+        assertEquals(
+            closeContent.shortcutSet.shortcuts.toList(),
+            terminalClose.shortcutSet.shortcuts.toList(),
+            "'$TERMINAL_CLOSE_TAB' no longer answers CloseContent's shortcut",
+        )
+        assertTrue(
+            terminalClose.shortcutSet.shortcuts.isNotEmpty(),
+            "both are unbound in this keymap, so this test would prove nothing",
+        )
+    }
+
+    @Test
+    fun `Terminal_CloseTab promotes itself, which is why guarding CloseContent alone is not enough`() {
+        // This is the whole bug: on a shortcut both actions answer, the platform
+        // asks every ActionPromoter to reorder the candidates and then performs the
+        // first *enabled* one. Terminal.CloseTab puts itself in front, so PinGuard's
+        // wrapped CloseContent is never even consulted.
+        val terminalClose = requireNotNull(actions.getAction(TERMINAL_CLOSE_TAB))
+        val closeContent = requireNotNull(actions.getAction("CloseContent"))
+
+        assertTrue(
+            terminalClose is ActionPromoter,
+            "'$TERMINAL_CLOSE_TAB' is no longer a promoter; it may no longer outrank CloseContent",
+        )
+        assertEquals(
+            listOf(terminalClose),
+            (terminalClose as ActionPromoter).promote(listOf(closeContent, terminalClose), DataContext.EMPTY_CONTEXT),
+            "'$TERMINAL_CLOSE_TAB' no longer promotes itself to the front",
+        )
+    }
+
+    @Test
+    fun `Terminal_CloseTab is guarded, because it is what Cmd+W actually runs in a terminal tab`() {
+        assertTrue(TERMINAL_CLOSE_TAB in GUARDED.keys)
+
+        installed {
+            assertTrue(
+                actions.getAction(TERMINAL_CLOSE_TAB) is GuardedCloseAction,
+                "'$TERMINAL_CLOSE_TAB' was left unwrapped, so Cmd+W still closes a pinned terminal tab",
+            )
+        }
+    }
+
+    @Test
+    fun `a guarded Terminal_CloseTab is still a promoter, so it keeps winning the shortcut`() {
+        // A wrapper that dropped the marker would hand the keystroke back to
+        // CloseContent. Both are guarded, so the user-visible outcome would survive
+        // — but which action runs would have moved, silently, as a side effect of
+        // wrapping. Preserve what the original carried.
+        installed {
+            val wrapper = requireNotNull(actions.getAction(TERMINAL_CLOSE_TAB))
+
+            // Without this the test reads the platform's own action and passes
+            // whether or not PinGuard wraps anything.
+            assertTrue(wrapper is GuardedCloseAction, "'$TERMINAL_CLOSE_TAB' is not wrapped at all")
+            assertTrue(wrapper is ActionPromoter, "the wrapper dropped the promoter marker the original carried")
+            assertEquals(
+                listOf(wrapper),
+                (wrapper as ActionPromoter).promote(listOf(actions.getAction("CloseContent"), wrapper), DataContext.EMPTY_CONTEXT),
+                "the wrapper no longer promotes itself the way the action it displaced did",
+            )
+        }
+    }
+
+    @Test
+    fun `a guarded Terminal_CloseTab keeps its shortcut, so the terminal still lets Cmd+W through`() {
+        // TerminalEventDispatcher swallows every keystroke and sends it to the shell
+        // unless it matches the shortcut of an allow-listed action, and it resolves
+        // that list by id through ActionManager — so it will resolve *the wrapper*.
+        // A wrapper that reported no shortcut would make Cmd+W reach the shell as
+        // ^W instead, which is a far worse bug than the one being fixed.
+        val before = requireNotNull(actions.getAction(TERMINAL_CLOSE_TAB)).shortcutSet.shortcuts.toList()
+
+        installed {
+            val wrapper = requireNotNull(actions.getAction(TERMINAL_CLOSE_TAB))
+
+            assertTrue(wrapper is GuardedCloseAction, "'$TERMINAL_CLOSE_TAB' is not wrapped at all")
+            assertEquals(
+                before,
+                wrapper.shortcutSet.shortcuts.toList(),
+                "the wrapper answers different shortcuts, so the terminal's allow-list no longer matches Cmd+W",
+            )
+        }
+    }
+
+    @Test
+    fun `no guarded action carries both markers, which is why wrap reads them in order`() {
+        // PinGuardActionGuards.wrap has a variant per marker and none for the two
+        // together, so an action carrying both would silently lose one. Nothing the
+        // platform ships does — and this is what notices the day one starts.
+        GUARDED.keys.mapNotNull { actions.getAction(it) }.forEach { original ->
+            assertFalse(
+                original is LightEditCompatible && original is ActionPromoter,
+                "'${actions.getId(original)}' is now both LightEditCompatible and an ActionPromoter, " +
+                    "so wrapping it drops one; wrap() needs a combined variant",
+            )
+        }
+    }
+
+    @Test
+    fun `Terminal_CloseSession is deliberately left alone, because it closes nothing`() {
+        // Ctrl+D only writes EOF to the shell. The tab that follows is closed by
+        // TerminalViewFileEditor on session termination, programmatically, which no
+        // action-layer guard can or should intercept.
+        assertFalse("Terminal.CloseSession" in GUARDED.keys)
     }
 }

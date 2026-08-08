@@ -3,6 +3,15 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- A terminal moved into the editor with "Move to Editor" and pinned there is no longer closed by Cmd+W (Ctrl+F4 on
+  Windows and Linux). The terminal ships its own close action bound to the same shortcut, and it takes precedence over
+  the one the tab's context menu uses, so it needed guarding of its own. Closing a terminal tab that is not pinned, and
+  closing terminal tabs in the tool window, are unaffected.
+
 ## [0.1.0] - 2026-08-08
 
 ### Added

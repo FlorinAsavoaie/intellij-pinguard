@@ -39,6 +39,21 @@ dependencies {
         // real editor windows — which is the whole point.
         bundledModule("intellij.platform.frontend")
 
+        // The terminal, for the tests alone. `Terminal.CloseTab` is the one id in
+        // `GUARDED` that belongs to a bundled plugin rather than to the platform,
+        // and the tests that hold the platform to what it does — that it answers
+        // CloseContent's shortcut, and that it promotes itself past it — need it
+        // registered to say anything at all. Without this the whole close-guard
+        // suite fails on a plugin set that happens not to carry the terminal.
+        //
+        // `testBundledPlugin` rather than `bundledPlugin`: PinGuard names the
+        // action by id through `ActionManager` and links against nothing in the
+        // terminal, so putting it on the production compile classpath would
+        // declare a dependency the plugin does not have. Nothing changes for a
+        // user whose IDE ships no terminal either — `PinGuardActionGuards.guard`
+        // logs the missing id and moves on.
+        testBundledPlugin("org.jetbrains.plugins.terminal")
+
         // Brings in com.intellij.testFramework, so a test can start a real
         // application and open a real project.
         //

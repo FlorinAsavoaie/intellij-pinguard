@@ -1,9 +1,11 @@
 package tech.florin.pinguard
 
 import com.intellij.ide.lightEdit.LightEditCompatible
+import com.intellij.openapi.actionSystem.ActionPromoter
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.command.CommandProcessor
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx
@@ -142,3 +144,35 @@ internal class GuardedLightEditCloseAction(
     selector: PinnedFileSelector,
     gate: PinnedCloseGate,
 ) : GuardedCloseAction(original, scope, selector, gate), LightEditCompatible
+
+/**
+ * The variant for `Terminal.CloseTab`, whose original is an [ActionPromoter].
+ *
+ * Carrying the marker across is what keeps wrapping from quietly moving a
+ * keystroke: `Terminal.CloseTab` and `CloseContent` both answer Cmd+W, and it is
+ * the promotion that decides which of them the platform performs. A wrapper
+ * without it would hand Cmd+W back to `CloseContent` — still guarded, so the user
+ * would see the same outcome, but by a different route than the one anyone
+ * debugging this would be reading.
+ *
+ * [promote] answers `this` rather than delegating to the original, and that is not
+ * a shortcut. `Utils.rearrangeByPromotersImpl` splices whatever a promoter returns
+ * into the head of the candidate list, so delegating would insert the *displaced*
+ * action — the unguarded one — and the platform would perform it. Answering `this`
+ * is also exactly what the original does: `TerminalPromotedDumbAwareAction.promote`
+ * returns `listOf(this)` unconditionally, which `PinGuardActionGuardsTest` holds
+ * the platform to.
+ *
+ * [suppress] is deliberately not overridden. The base the terminal's action
+ * inherits does not implement it either, so forwarding would be inventing
+ * behaviour rather than preserving it.
+ */
+internal class GuardedPromotedCloseAction(
+    original: AnAction,
+    scope: CloseActionScope,
+    selector: PinnedFileSelector,
+    gate: PinnedCloseGate,
+) : GuardedCloseAction(original, scope, selector, gate), ActionPromoter {
+
+    override fun promote(actions: List<AnAction>, context: DataContext): List<AnAction>? = listOf(this)
+}

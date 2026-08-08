@@ -461,4 +461,54 @@ internal class GuardedCloseActionTest : RealEditorTestCase() {
 
         assertEquals(original.actionUpdateThread, action.actionUpdateThread)
     }
+
+    @Test
+    fun `a guarded Terminal_CloseTab keeps a pinned terminal tab open`() {
+        // The reported bug: a terminal moved into the editor and pinned there is
+        // closed by Terminal.CloseTab on Cmd+W, not by CloseContent. The tab is an
+        // ordinary editor tab over a light virtual file, so a plain file stands in
+        // for it — what is being exercised is the action, not the terminal.
+        val pinned = open("Pinned.kt")
+        open("A.kt")
+        pin(pinned)
+
+        val action = guarded(TERMINAL_CLOSE_TAB, terminalScope())
+        inEdt { action.actionPerformed(event(file = pinned)) }
+
+        assertEquals(setOf("Pinned.kt", "A.kt"), openNames().toSet())
+    }
+
+    /**
+     * The scope PinGuard really wires this action to, rather than one this test
+     * chose — so picking the wrong one in [GUARDED] fails here rather than shipping.
+     */
+    private fun terminalScope(): CloseActionScope =
+        requireNotNull(GUARDED[TERMINAL_CLOSE_TAB]) { "'$TERMINAL_CLOSE_TAB' is not guarded, so Cmd+W is unprotected" }
+
+    @Test
+    fun `a guarded Terminal_CloseTab closes an unpinned tab exactly as it always did`() {
+        val loose = open("A.kt")
+
+        val (original, action) = guardedStub(terminalScope())
+        inEdt { action.actionPerformed(event(file = loose)) }
+
+        assertEquals(1, original.invocations, "with no pin involved the terminal's own action must run untouched")
+        assertEquals(setOf("A.kt"), openNames().toSet(), "and PinGuard must not have closed it itself")
+    }
+
+    @Test
+    fun `a terminal tool-window close reaches the terminal's own action untouched`() {
+        // Terminal.CloseTab also closes tool-window terminal tabs, which are not
+        // editor tabs and carry no virtual file. SingleTabScope then cannot name a
+        // target, the guard stands aside, and the tool window behaves as it always
+        // has — including while an unrelated pinned tab sits in the editor.
+        val pinned = open("Pinned.kt")
+        pin(pinned)
+
+        val (original, action) = guardedStub(terminalScope())
+        inEdt { action.actionPerformed(event(file = null, window = null)) }
+
+        assertEquals(1, original.invocations, "a close with no virtual file is not PinGuard's to intercept")
+        assertEquals(setOf("Pinned.kt"), openNames().toSet())
+    }
 }
