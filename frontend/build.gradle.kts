@@ -115,3 +115,37 @@ tasks.test {
         events("passed", "skipped", "failed")
     }
 }
+
+/**
+ * Keeps bundled plugins that PinGuard does not exercise out of the test IDE.
+ *
+ * The test framework fails a test on any error the platform *logs*, wherever it
+ * came from, and the suites built on [RealEditorTestCase] open real files in a
+ * real editor — which makes the platform enumerate every `LspServerSupportProvider`
+ * there is. Vue's throws while being constructed on this distribution:
+ *
+ *     IllegalStateException: .../plugins/vuejs-plugin/lib/modules should be lib directory
+ *
+ * It arrives on a pooled thread, so it lands on whichever test is running rather
+ * than on one in particular, and it takes the whole suite down with it — 44 tests
+ * on the run that prompted this, plus a Disposer leak at shutdown from the
+ * teardown those failures skipped.
+ *
+ * None of that is PinGuard's, and none of it is reachable from anything PinGuard
+ * does: the plugin guards close actions on editor tabs and never asks what
+ * language a file is. Disabling the plugin prevents the error rather than
+ * swallowing it, which is the reason this is here and not a `LoggedErrorProcessor`
+ * filtering the log — a filter would hide PinGuard's own errors just as well.
+ *
+ * Written through the sandbox task rather than by hand into `disabled_plugins.txt`
+ * because `prepareTestSandbox` rewrites that file from this property on every run;
+ * a copy edited in place survives exactly until the next build, which is what made
+ * this look intermittent rather than broken.
+ *
+ * If another bundled plugin starts doing the same, add it here. The list is
+ * deliberately specific: disabling by guesswork would mean the suite stops
+ * exercising the platform it ships against.
+ */
+tasks.named<org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask>("prepareTestSandbox") {
+    disabledPlugins.add("org.jetbrains.plugins.vue")
+}

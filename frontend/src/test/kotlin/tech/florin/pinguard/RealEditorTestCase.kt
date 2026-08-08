@@ -1,6 +1,7 @@
 package tech.florin.pinguard
 
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.impl.NonBlockingReadActionImpl
 import com.intellij.openapi.application.runWriteAction
 import com.intellij.openapi.components.ComponentManagerEx
 import com.intellij.openapi.fileEditor.FileEditorManager
@@ -24,8 +25,12 @@ import com.intellij.testFramework.junit5.fixture.sourceRootFixture
 import com.intellij.testFramework.replaceService
 import com.intellij.testFramework.runInEdtAndWait
 import javax.swing.SwingConstants
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.job
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 
@@ -97,7 +102,17 @@ internal abstract class RealEditorTestCase {
             // through them the whole project, alive past the end of the run.
             Disposer.dispose(manager)
             Disposer.dispose(serviceDisposable)
-            scope.cancel()
+        }
+
+        // Off the EDT, and joining rather than only asking: `cancel()` *requests*
+        // cancellation and returns, so on its own it leaves this test's coroutines
+        // still running — and every one of them carries the project in its context.
+        // Joining is what makes "cancelled" mean "finished". Bounded, because a
+        // coroutine that never completes should fail this test rather than hang the
+        // build with no indication of which test stopped.
+        runBlocking {
+            withTimeoutOrNull(30.seconds) { scope.coroutineContext.job.cancelAndJoin() }
+                ?: error("the test scope did not finish cancelling; something is still holding the project")
         }
 
         // Separately, and after the disposal has returned: closing an editor and
@@ -113,10 +128,31 @@ internal abstract class RealEditorTestCase {
     /**
      * Runs everything queued on the EDT, and whatever that queues in turn, so
      * that nothing outlives the test.
+     *
+     * Waiting comes before draining, rather than the drain being repeated on its
+     * own. The runnables that keep a disposed project alive are queued onto the EDT
+     * *by* background tasks, so a drain that runs while one of those is still going
+     * only empties the queue in front of the next enqueue — which is how a fixed
+     * number of drains comes to pass or fail depending on timing. Left as three
+     * drains alone this leaked a `ProjectImpl` on roughly two runs in three.
      */
     protected fun drainTheEventQueue() {
+        // Once, and first. Off the EDT, because it waits on the other threads
+        // rather than on this one, and it is what covers the work the queue drain
+        // cannot reach: the runnable that strands a project is queued by a
+        // background task needing the write-intent lock, which a plain drain leaves
+        // where it is. It is also by far the most expensive thing in this teardown,
+        // so it runs once and the cheap drains do the repeating.
+        PlatformTestUtil.waitForAllBackgroundActivityToCalmDown()
+
         repeat(3) {
-            runInEdtAndWait { PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue() }
+            // Both on the EDT: waitForAsyncTaskCompletion asserts it is there,
+            // because pumping the queue while it waits is how it lets the tasks it
+            // is waiting for finish.
+            runInEdtAndWait {
+                NonBlockingReadActionImpl.waitForAsyncTaskCompletion()
+                PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue()
+            }
         }
     }
 
