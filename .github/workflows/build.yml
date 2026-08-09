@@ -1,8 +1,6 @@
 name: Build
 
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -23,19 +21,6 @@ jobs:
           java-version: '21'
           distribution: temurin
 
-      # This also caches the IDEs. The verifier downloads a full one per entry in
-      # `pluginVerification.ides`, and every one of them arrives as an ordinary
-      # Gradle dependency under `~/.gradle/caches/modules-2/files-2.1/idea/` —
-      # which this action caches by default. `.intellijPlatform/ides/` holds only
-      # the extraction of what is already cached there.
-      #
-      # A hand-rolled `actions/cache` step used to sit here as well, and was worth
-      # nothing: it named `…/files-2.1/com.jetbrains.intellij.idea`, a coordinate
-      # that stopped existing when build.gradle.kts moved to the unified
-      # `intellijIdea` artifact, and `~/.pluginVerifier`, whose `ides/` the
-      # verifier leaves empty. Re-adding one would need
-      # `gradle-home-cache-excludes` here to avoid storing ~4 GB twice against the
-      # 10 GB per-repository ceiling.
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
@@ -45,9 +30,6 @@ jobs:
       - name: Build plugin
         run: ./gradlew buildPlugin
 
-      # The README states which builds PinGuard is verified against. This is what
-      # keeps that claim true after a platform bump rather than at the moment
-      # someone last ran it by hand.
       - name: Verify plugin
         run: ./gradlew verifyPlugin
 

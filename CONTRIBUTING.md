@@ -7,16 +7,16 @@ why. For what PinGuard does from a user's chair, see [README.md](README.md).
 
 ```bash
 ./gradlew test           # unit and in-IDE tests
-./gradlew buildPlugin    # -> build/distributions/pinguard-0.1.0.zip
+./gradlew buildPlugin    # -> build/distributions/pinguard-0.0.0.zip
 ./gradlew verifyPlugin   # IntelliJ Plugin Verifier
 ./gradlew runIde         # sandbox IDE with the plugin installed
 ./gradlew runIdeSplitMode # backend + JetBrains Client, where the frontend module runs
 ```
 
 Requires JDK 21. CI (`.github/workflows/build.yml`) runs `test`, `buildPlugin`
-and `verifyPlugin` on every push to `main` and every pull request, which is what
-keeps the compatibility claim in the README true after a platform bump rather
-than at the moment someone last ran the verifier by hand.
+and `verifyPlugin` on every pull request, and on demand from the Actions tab,
+which is what keeps the compatibility claim in the README true after a platform
+bump rather than at the moment someone last ran the verifier by hand.
 
 `runIde` is an ordinary monolithic sandbox. Split mode is deliberately *not*
 configured on the `intellijPlatform` extension: those settings are conventions for
@@ -24,11 +24,76 @@ every task that has a sandbox, so setting them would silently turn `runIde` itse
 into a backend plus a client. `runIdeSplitMode` configures itself and is the only
 task that needs to.
 
-### Changelog
+Every build that is not a release is version `0.0.0`, which is why the zip above is
+named that way. The version a release ships under is not stored in this repository
+at all: it comes from the release tag, and `-PpluginVersion=` or the
+`PLUGIN_VERSION` environment variable is how a build is told which one it is
+producing. There is nothing to bump before a release and nothing to edit in
+`plugin.xml`.
 
-The descriptor's change notes are rendered from `CHANGELOG.md` by the
-`org.jetbrains.changelog` plugin, so the two cannot disagree. Put user-visible
-changes under `[Unreleased]`; there is nothing to edit in `plugin.xml`.
+## Releasing
+
+There is no changelog file. The body of the GitHub release *is* the change notes:
+`release.yml` writes it to `build/release-notes.md` and the descriptor renders it to
+HTML from there. Marketplace documents change-notes as accepting simple HTML, so
+keep a release body to headings, paragraphs, lists, links, emphasis and inline code
+— a table, an image or a collapsible block is outside what is documented. Since
+nothing records user-visible changes in the repository any more, say what a change
+means for users in the pull request, where it can be lifted into a release body.
+
+Releasing needs a GitHub environment named `Marketplace` carrying four secrets:
+`PUBLISH_TOKEN` from your [Marketplace tokens](https://plugins.jetbrains.com/author/me/tokens),
+and `CERTIFICATE_CHAIN`, `PRIVATE_KEY` and `PRIVATE_KEY_PASSWORD` from a signing key
+made as [plugin signing](https://plugins.jetbrains.com/docs/intellij/plugin-signing.html)
+describes. Without the signing three, `publishPlugin` refuses to upload rather than
+quietly shipping an unsigned plugin. `releaseDraft` additionally needs an
+authenticated `gh` and an `origin` remote.
+
+### The first upload
+
+JetBrains requires the first publication of a plugin to be uploaded by hand, so the
+procedure below does not apply to it — following it would tag and publish a release
+that fails at the last step. Instead, write the notes into `build/release-notes.md`
+yourself, build the signed archive with the signing variables exported, and upload
+it on the plugin's Marketplace page:
+
+```bash
+./gradlew signPlugin -PpluginVersion=1.2.3   # -> build/distributions/pinguard-1.2.3-signed.zip
+```
+
+Then tag that commit, so the guard below has something to measure later releases
+against — it reads git tags and GitHub releases, and can see nothing that exists only
+on Marketplace.
+
+### Every release after that
+
+```bash
+./gradlew releaseDraft --release-version=1.2.3
+```
+
+That checks what is still cheap to get wrong — the version's shape, no uncommitted
+changes to tracked files, a pushed HEAD, no tag or release already using the version,
+and that it is newer than every version tagged here or released on GitHub — and then
+opens a **draft** release pinned to the current commit. No tag exists yet, so an
+abandoned draft costs nothing: delete it.
+
+Write the notes into that draft, then publish it. Publishing is what creates the tag
+and starts `release.yml`, which tests, verifies, publishes to Marketplace and attaches
+the signed archive back to the release. Publishing is left to a person because that is
+where the notes get written; if you ever automate it, it must not be with the
+workflow's own `GITHUB_TOKEN`, which triggers no workflow at all — `gh` with your own
+credentials is fine.
+
+A pre-release version picks its own Marketplace channel: `1.2.3-beta.1` goes to `beta`,
+which only people who added that channel's URL receive. `releaseDraft` marks such a
+draft as a pre-release on GitHub to match, and `release.yml` refuses to publish if the
+two ever disagree.
+
+Nothing in the release job writes to this repository.
+
+Note that `build/release-notes.md` is read by every build that finds it, so a file
+left over from a release becomes the change notes of your next local build; `clean`
+removes it, along with any notes you were about to release.
 
 ## How it works
 
@@ -193,11 +258,21 @@ means measuring again, logged in, with a genuinely deep exception.
 
 ## Verifier caveats
 
-`verifyPlugin` runs the Plugin Verifier against `IU-253.28294.334` and
-`IU-262.8665.258` and reports the plugin compatible with both. Adding the other
-JetBrains IDEs to `pluginVerification.ides` in `build.gradle.kts` is what would
-turn "installs everywhere" from a statement about the dependency into a measured
-result.
+`verifyPlugin` runs the Plugin Verifier against the latest release build of every
+IntelliJ IDEA major from `pluginSinceBuild` onwards and reports the plugin
+compatible with each. `pluginVerification.ides` in `build.gradle.kts` selects that
+set from the declared compatibility range rather than naming builds, so a major
+released after the last edit to that file cannot go unverified;
+`./gradlew printProductsReleases` prints the same range with the pre-release
+channels still in it, so its newest lines are often the EAP or RC build of a major
+rather than the stable one the verifier takes. Widening `types` there to the other
+JetBrains IDEs is what would turn "installs everywhere" from a statement about the
+dependency into a measured result.
+
+Because the set is resolved afresh, `release.yml` runs `verifyPlugin` against
+whatever majors exist on the day: a platform released since the last green build can
+block a release. Pinning `select { untilBuild = … }`, or naming builds with
+`create(...)` for that one release, is the way past it.
 
 - The verifier reports three experimental-API usages: `VirtualFilePreCloseCheck`
   (the interface and the overridden method) and `LightEditCompatible`, which the

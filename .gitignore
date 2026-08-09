@@ -17,3 +17,8 @@ out/
 # one running IDE instance, so it is never right for anyone else.
 .claude/settings.local.json
 .mcp.json
+
+# Secrets
+*.pem
+.env
+.envrc

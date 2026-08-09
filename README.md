@@ -69,10 +69,12 @@ that has pinned editor tabs — IDEA, PyCharm, WebStorm, GoLand, Rider, CLion,
 RubyMine, PhpStorm.
 
 Verified, however, only against IntelliJ IDEA: every build runs the JetBrains
-Plugin Verifier against `IU-253.28294.334` and `IU-262.8665.258` and reports the
-plugin compatible with both. The other IDEs are expected to work — nothing here
-reaches past `com.intellij.modules.platform` — but "installs everywhere" is a
-statement about the dependency, not a result anyone has measured.
+Plugin Verifier against the latest release build of each IntelliJ IDEA major from
+253 onwards and reports the plugin compatible with each. That set is derived from
+the declared range rather than listed by hand, so a new major joins it on the day
+it ships. The other IDEs are expected to work — nothing here reaches past
+`com.intellij.modules.platform` — but "installs everywhere" is a statement about
+the dependency, not a result anyone has measured.
 
 ### Remote development and Code With Me
 
