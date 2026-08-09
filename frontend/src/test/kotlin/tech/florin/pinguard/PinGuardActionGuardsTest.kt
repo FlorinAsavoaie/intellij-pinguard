@@ -1,5 +1,6 @@
 package tech.florin.pinguard
 
+import com.intellij.ide.actions.CloseAction
 import com.intellij.ide.lightEdit.LightEditCompatible
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionPlaces
@@ -197,6 +198,21 @@ internal class PinGuardActionGuardsTest {
         val closeContent = requireNotNull(actions.getAction("CloseContent"))
 
         assertTrue(closeContent is LightEditCompatible, "CloseContent is no longer LightEdit-compatible")
+    }
+
+    @Test
+    fun `CloseContent is still the action the tab-menu tests are written against`() {
+        // `GuardedCloseActionTest` builds its tab-menu tests over a `CloseAction` of its
+        // own, since the id already answers with a guard here. Reimplement `CloseContent`
+        // and those tests keep passing about a class nothing dispatches; this is the
+        // assertion that breaks instead.
+        val closeContent = requireNotNull(actions.getAction("CloseContent"))
+
+        assertEquals(
+            CloseAction::class.java.name,
+            closeContent.javaClass.name,
+            "'CloseContent' is a different action now; the tab-menu tests are exercising a class nothing dispatches",
+        )
     }
 
     @Test

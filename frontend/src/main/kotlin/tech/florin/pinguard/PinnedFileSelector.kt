@@ -30,11 +30,16 @@ internal fun interface PinnedFileSelector {
  * Asks the gate about a set of pinned tabs.
  *
  * An extension so [PinnedCloseGate] itself stays free of platform types.
- *
- * @return true if the close may proceed.
  */
-internal fun PinnedCloseGate.canClose(pinned: List<PinnedFile>): Boolean =
-    canClose(
+internal fun PinnedCloseGate.outcomeFor(pinned: List<PinnedFile>): CloseOutcome =
+    outcomeFor(
         pinnedNames = pinned.map { it.presentableName },
         pinnedIn = pinned.flatMap { it.pinnedIn }.distinct(),
     )
+
+/**
+ * The same question, for callers with only a yes or a no to act on.
+ *
+ * @return true if the close may proceed.
+ */
+internal fun PinnedCloseGate.canClose(pinned: List<PinnedFile>): Boolean = outcomeFor(pinned).allowsClosing

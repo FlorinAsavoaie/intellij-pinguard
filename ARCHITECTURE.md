@@ -38,6 +38,16 @@ Action — it closes each sibling through `FileEditorManagerEx.closeFile`, which
 no pin check at all, and that is the branch the guard exists for. Both halves of
 that claim are read off the platform by a test rather than trusted.
 
+`CloseContent` is not only about editor tabs, and that matters more than it looks.
+It closes whatever `CloseAction.CloseTarget` its data context names, and a tool
+window names one too — <kbd>Cmd</kbd>+<kbd>W</kbd> with the focus in the Project view
+hides that tool window. Such an event carries a `VirtualFile` of its own, the one
+selected in the tree, which may well be pinned in the editor. `SingleTabScope`
+therefore requires an `EditorWindow` in the context as well as a file: that is the
+platform's own signal that a close is aimed at an editor tab, and it is the
+difference between guarding a pin and answering a tool-window gesture by closing a
+tab nobody aimed at.
+
 The last row is the one worth knowing about. Those four actions protect pinned
 tabs already: `CloseEditorsActionBase` consults `EditorComposite.isPinned` before
 offering a tab up, so a pinned tab is never among the files they would close.
@@ -48,7 +58,7 @@ its reflection are gone. What replaced it is a test that fails the day the
 platform stops excluding pinned tabs, which is the day those four would need
 guarding again.
 
-Three properties fall out of guarding at the action layer:
+Four properties fall out of guarding at the action layer:
 
 - **Closing a project or the IDE is never interrupted.** Neither dispatches these
   actions, so this is structural rather than a condition the plugin has to get
@@ -56,7 +66,46 @@ Three properties fall out of guarding at the action layer:
 - **A refused close still closes everything else.** Cancelling a "Close All"
   outright because one tab is pinned would strand the tabs you did mean to close,
   so PinGuard narrows the action to its unpinned tabs and performs that itself.
+- **A confirmed close is performed here too** — see below.
 - **"Close All Unpinned Tabs" is untouched.** It already leaves pinned tabs alone.
+
+### Why a confirmed close is not handed back
+
+The obvious shape for the confirmation setting is "ask, and on a yes let the
+platform's own action run" — the close is exactly the one the user asked for, so
+why reimplement it. That shape closes the wrong tab, and the reason is worth
+writing down because nothing about it is visible from PinGuard's side.
+
+The platform's close actions do not close what their event says. `CloseContent` is
+`CloseAction`, which performs whatever `CloseAction.CloseTarget` its data context
+names; for editor tabs that is the tabs component, and it closes
+`JBTabsImpl.getTargetInfo()` — `popupInfo ?: selectedInfo` — read at the moment the
+action runs. `popupInfo` is the tab a context menu was opened on, recorded by
+`TabLabel.handlePopup`, and it is cleared from a `SwingUtilities.invokeLater` queued
+when the menu comes down. Swing hides a menu *before* firing the item chosen from it
+(`BasicMenuItemUI.doClick` calls `clearSelectedPath()` and then `doClick(0)`), so
+that clearing is already queued when the action starts and normally runs after it
+finishes. The right-clicked tab is what closes, and everything works.
+
+A modal dialog pumps the event queue. So a guard that asks — and only one that asks;
+blocking never puts a dialog up — runs that clearing in the middle of the close, and
+the action it then hands the event back to closes whichever tab is selected by now.
+Right-click a pinned tab with a different tab in front, confirm, and the tab you were
+looking at closes instead.
+
+The event PinGuard reads is not stale, which is why the dialog names the right file:
+`CommonDataKeys.VIRTUAL_FILE` in a tab menu comes from `TabLabel`, which answers from
+its own tab's composite, and the popup's `PreCachedDataContext` froze it when the menu
+opened. The staleness is entirely on the platform's side, in state PinGuard has no
+business reaching into. So the rule is the narrow one: **the original runs only where
+PinGuard has said nothing to the user.** `CloseOutcome` exists to carry that
+distinction — `UNOPPOSED` and `CONFIRMED` are both "yes", and only the first of them
+can be delegated.
+
+`GuardedCloseActionTest` holds all three halves of this: that a confirmed close from a
+tab menu takes the tab the menu was on, that the same close through a switched-off
+guard still works (so the reproduction is not the thing that is broken), and that one
+turn of the event queue is what loses the aim.
 
 A file counts as pinned if any editor window in any open project has it pinned, so
 a tab pinned in one split is protected from being closed in another.
@@ -174,7 +223,7 @@ in-process tests, with the IDE-facing pieces behind small interfaces:
 
 | Type | Responsibility |
 | --- | --- |
-| `PinnedCloseGate` | The whole decision — allow, block, or ask — and the prompting when the answer is "ask". |
+| `PinnedCloseGate` | The whole decision — allow, block, or ask — and the prompting when the answer is "ask". Its `CloseOutcome` keeps "nothing was in the way" apart from "the user was asked and said yes", which is what stops a confirmed close being handed back. |
 | `PinGuardState` | The two settings, in the shape they persist in. |
 | `PinGuardSettings` | Application-level persisted settings. |
 | `PinGuardConfigurable` | The settings page under **Editor \| PinGuard**. |
@@ -200,8 +249,8 @@ The scopes and the action wrapper need a real `AnActionEvent`, real splits and a
 real `FileEditorManagerImpl`, so they are covered by `RealEditorTestCase` — which
 swaps the headless stub for the production editor manager, without which every pin
 lookup reports nothing and a test built on it passes while exercising nothing.
-That is where the per-split behaviour, the project-wide fallbacks and the
-narrowed close are all pinned down.
+That is where the per-split behaviour, the project-wide fallbacks, the narrowed
+close and the confirmed one are all pinned down.
 
 Some of those tests exist to catch the platform changing under the plugin rather
 than to check PinGuard's own logic. One asserts that the Close
@@ -213,9 +262,12 @@ Close Others branches between — `EditorWindow.closeAllExcept`, which skips pin
 files, and `FileEditorManagerEx.closeFile`, which does not — because that
 asymmetry is the entire reason `OtherTabsScope` guards one branch and stands
 aside on the other, and either half of it changing should fail here rather than
-quietly leaving a close path guarded for nothing or unguarded for real. All of
-them fail loudly rather than degrading quietly, which is the whole point of
-moving that reflection out of the plugin and into a test.
+quietly leaving a close path guarded for nothing or unguarded for real. One more
+reads `JBTabsImpl.getTargetInfo` falling back to the selected tab after a turn of
+the event queue, which is the whole reason a confirmed close is performed by the
+plugin rather than handed back. All of them fail loudly rather than degrading
+quietly, which is the whole point of moving that reflection out of the plugin and
+into a test.
 
 The one thing no unit test can settle is whether GitHub accepts a URL of a given
 size, since that depends on the cookies in the reporter's browser. The 4000-byte

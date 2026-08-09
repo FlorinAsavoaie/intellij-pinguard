@@ -1,5 +1,6 @@
 package tech.florin.pinguard
 
+import com.intellij.ide.actions.CloseAction
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext
 import com.intellij.openapi.application.ApplicationManager
@@ -9,6 +10,10 @@ import com.intellij.openapi.fileEditor.impl.EditorComposite
 import com.intellij.openapi.fileEditor.impl.EditorWindow
 import com.intellij.openapi.util.Pair
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.testFramework.PlatformTestUtil
+import com.intellij.ui.tabs.impl.JBTabsImpl
+import javax.swing.JPopupMenu
+import javax.swing.event.PopupMenuEvent
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -369,7 +374,7 @@ internal class GuardedCloseActionTest : RealEditorTestCase() {
     }
 
     @Test
-    fun `confirming the close hands it back to the platform, pinned tab included`() {
+    fun `confirming the close closes the pinned tab too, here rather than in the platform's action`() {
         val pinned = open("Pinned.kt")
         open("A.kt")
         pin(pinned)
@@ -380,8 +385,147 @@ internal class GuardedCloseActionTest : RealEditorTestCase() {
         )
         inEdt { action.actionPerformed(event(window = mainWindow())) }
 
-        assertEquals(1, original.invocations, "the user said yes, so the close is the platform's again in full")
-        assertEquals(setOf("Pinned.kt", "A.kt"), openNames().toSet())
+        assertEquals(
+            0,
+            original.invocations,
+            "asking took a dialog, so the original's event no longer describes the editor it would read",
+        )
+        assertEquals(emptySet(), openNames().toSet(), "the user said yes to all of it, pin included")
+    }
+
+    /**
+     * The wrapper PinGuard installs over `CloseContent`, over a platform action of this
+     * test's own.
+     *
+     * The plugin is really loaded in this sandbox, so [ActionManager] already answers
+     * that id with a guard, and wrapping that would ask the user twice about one close.
+     */
+    private fun guardedCloseContent(gate: PinnedCloseGate): GuardedCloseAction =
+        GuardedLightEditCloseAction(CloseAction(), SingleTabScope, PlatformPinnedFiles.selector(), gate)
+
+    /**
+     * Runs [body] where a close chosen from [file]'s tab context menu really runs: with
+     * the menu just down, and the editor still remembering which tab it was on.
+     *
+     * That memory is `JBTabsImpl.popupInfo`, which is what `CloseContent` closes and
+     * which the platform drops from an `invokeLater` queued as the menu goes. It
+     * therefore outlives the gesture by one turn of the event queue, and nothing here
+     * may span more than the single [inEdt] an IDE would have.
+     */
+    private fun <T> fromTheTabMenuOn(
+        file: VirtualFile,
+        window: EditorWindow = mainWindow(),
+        body: (JBTabsImpl) -> T,
+    ): T = runInEdtAndGetValue {
+        val tabs = window.tabbedPane.tabs as JBTabsImpl
+        tabs.popupInfo = requireNotNull(tabs.tabs.firstOrNull { it.`object` == file }) {
+            "${file.name} has no tab in this window, so there is nothing to right-click"
+        }
+        tabs.popupMenuWillBecomeInvisible(PopupMenuEvent(JPopupMenu()))
+        body(tabs)
+    }
+
+    /**
+     * What a tab context menu hands a close action: the right-clicked file, which a
+     * `TabLabel` answers with rather than the selected one, and the tabs component as
+     * the thing to close.
+     */
+    private fun tabMenuEvent(file: VirtualFile, tabs: JBTabsImpl, window: EditorWindow = mainWindow()): AnActionEvent {
+        val closeTarget = requireNotNull(tabs as? CloseAction.CloseTarget) {
+            "the editor's tabs are no longer what CloseContent closes; this is not the gesture it used to be"
+        }
+        val context: DataContext = SimpleDataContext.builder()
+            .add(CommonDataKeys.PROJECT, project)
+            .add(CommonDataKeys.VIRTUAL_FILE, file)
+            .add(EditorWindow.DATA_KEY, window)
+            .add(CloseAction.CloseTarget.KEY, closeTarget)
+            .build()
+
+        return AnActionEvent.createEvent(
+            context,
+            Presentation(),
+            ActionPlaces.EDITOR_TAB_POPUP,
+            ActionUiKind.POPUP,
+            null,
+        )
+    }
+
+    /** A pinned tab, and an unpinned one selected in front of it. */
+    private fun pinnedTabBehindTheActiveOne(): VirtualFile = open("Pinned.kt").also {
+        pin(it)
+        // Opened last, so it is the selected tab — the one a close falls back to.
+        open("Active.kt")
+    }
+
+    @Test
+    fun `confirming a close from the tab menu closes the tab the menu was on, not the tab in front of you`() {
+        val pinned = pinnedTabBehindTheActiveOne()
+
+        var asked = 0
+        val confirming = PinnedCloseGate(
+            configProvider = { PinGuardState(enabled = true, confirmInsteadOfBlock = true) },
+            prompt = {
+                asked++
+                // Standing in for the real dialog, which is modal and so pumps the queue
+                // the platform left that runnable in.
+                PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue()
+                true
+            },
+        )
+
+        fromTheTabMenuOn(pinned) { tabs ->
+            guardedCloseContent(confirming).actionPerformed(tabMenuEvent(pinned, tabs))
+        }
+
+        assertEquals(1, asked, "the close never reached the confirmation, so this proves nothing about answering it")
+        assertEquals(
+            setOf("Active.kt"),
+            openNames().toSet(),
+            "the user right-clicked Pinned.kt and confirmed closing it; Active.kt was never part of that close",
+        )
+    }
+
+    @Test
+    fun `the same close with nothing to ask about closes the tab the menu was on`() {
+        // The control for the test above. If this one ever fails, what is wrong is the
+        // way these two set the gesture up rather than the plugin.
+        val pinned = pinnedTabBehindTheActiveOne()
+
+        fromTheTabMenuOn(pinned) { tabs ->
+            guardedCloseContent(gate(PinGuardState(enabled = false, confirmInsteadOfBlock = false)))
+                .actionPerformed(tabMenuEvent(pinned, tabs))
+        }
+
+        assertEquals(
+            setOf("Active.kt"),
+            openNames().toSet(),
+            "switched off, PinGuard hands this straight to the platform, which closes the tab it was aimed at",
+        )
+    }
+
+    @Test
+    fun `stopping to ask is what loses the tab a menu close was aimed at`() {
+        // The platform contract the two tests above rest on, read by running it. The day
+        // the aim stops being lost this way, a confirmed close can go back to the
+        // platform untouched and those two are guarding nothing.
+        val pinned = pinnedTabBehindTheActiveOne()
+
+        val (whenTheMenuClosed, afterTheDialog) = fromTheTabMenuOn(pinned) { tabs ->
+            val aimedAt = tabs.targetInfo?.`object`
+            PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue()
+            aimedAt to tabs.targetInfo?.`object`
+        }
+
+        assertEquals(
+            pinned,
+            whenTheMenuClosed,
+            "precondition: with the menu just down, the close is still aimed at the tab it was on",
+        )
+        assertEquals(
+            "Active.kt",
+            (afterTheDialog as? VirtualFile)?.name,
+            "one turn of the event queue, and a menu close is aimed at the selected tab instead",
+        )
     }
 
     @Test
@@ -431,7 +575,9 @@ internal class GuardedCloseActionTest : RealEditorTestCase() {
     }
 
     @Test
-    fun `a prompt that throws also lets the close through`() {
+    fun `a prompt that throws keeps the pinned tab rather than handing the close back`() {
+        // The one failure PinGuard cannot answer by standing aside: a prompt that throws
+        // may have had its dialog up already, and the event cannot be handed back then.
         val pinned = open("Pinned.kt")
         open("A.kt")
         pin(pinned)
@@ -448,7 +594,37 @@ internal class GuardedCloseActionTest : RealEditorTestCase() {
 
         inEdt { action.actionPerformed(event(window = mainWindow())) }
 
-        assertEquals(1, original.invocations)
+        assertEquals(0, original.invocations, "handing back an event a dialog may have overtaken is the bug, not the fallback")
+        assertEquals(
+            setOf("Pinned.kt"),
+            openNames().toSet(),
+            "a guard that cannot ask keeps the pin, and still closes everything the user did mean to close",
+        )
+    }
+
+    @Test
+    fun `a close aimed at a tool window is not PinGuard's, whatever file it happens to name`() {
+        // Cmd+W with the focus in the Project view hides that tool window, and the
+        // context it carries names the file selected in the tree — which may be pinned
+        // in the editor, and was never in this close's way.
+        val pinned = open("Pinned.kt")
+        pin(pinned)
+
+        var asked = 0
+        val counting = PinnedCloseGate(
+            configProvider = { PinGuardState(enabled = true, confirmInsteadOfBlock = true) },
+            prompt = {
+                asked++
+                true
+            },
+        )
+
+        val (original, action) = guardedStub(SingleTabScope, counting)
+        inEdt { action.actionPerformed(event(file = pinned, window = null)) }
+
+        assertEquals(0, asked, "this close was never aimed at an editor tab, so there was nothing to ask about")
+        assertEquals(1, original.invocations, "and it belongs to the platform, which has a tool window to hide")
+        assertEquals(setOf("Pinned.kt"), openNames().toSet(), "the pinned tab is untouched either way")
     }
 
     @Test
