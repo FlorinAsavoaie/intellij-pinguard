@@ -30,13 +30,16 @@ internal fun interface CloseActionScope {
 /**
  * `CloseContent` — the single tab the user aimed at, whether by Cmd+W, the tab's
  * context menu, or the keyboard.
+ *
+ * Names nothing unless the event carries an editor window. `CloseContent` also
+ * serves tool windows and run consoles — Cmd+W in the Project view hides that tool
+ * window — and those events carry a file of their own, the one selected in the
+ * tree, which may itself be pinned. The window tells the two gestures apart.
  */
 internal val SingleTabScope = CloseActionScope { event ->
-    // CloseAction also serves tool windows and run consoles, which have no
-    // virtual file. Those must reach the original untouched.
-    event.getData(CommonDataKeys.VIRTUAL_FILE)?.let {
-        listOf(CloseTarget(it, event.getData(EditorWindow.DATA_KEY)))
-    }
+    val window = event.getData(EditorWindow.DATA_KEY)
+    val file = event.getData(CommonDataKeys.VIRTUAL_FILE)
+    if (window == null || file == null) null else listOf(CloseTarget(file, window))
 }
 
 /**

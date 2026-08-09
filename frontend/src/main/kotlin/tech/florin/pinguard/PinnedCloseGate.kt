@@ -27,6 +27,27 @@ internal enum class CloseDecision {
 }
 
 /**
+ * What the gate settled on.
+ *
+ * Three values rather than a yes and a no, because [CONFIRMED] means a dialog was up,
+ * and a dialog leaves whatever the caller knew about the editor out of date.
+ */
+internal enum class CloseOutcome {
+    /** Nothing stood in the close's way, and nobody was asked anything. */
+    UNOPPOSED,
+
+    /** A pin stood in the way, the user was asked, and said close it anyway. */
+    CONFIRMED,
+
+    /** A pin stood in the way and stays there. */
+    REFUSED,
+    ;
+
+    /** Whether the close may happen at all. */
+    val allowsClosing: Boolean get() = this != REFUSED
+}
+
+/**
  * Decides what should happen to a close request that involves pinned tabs, asking
  * the user when the settings call for it.
  *
@@ -38,31 +59,41 @@ internal class PinnedCloseGate(
     private val prompt: ConfirmationPrompt,
 ) {
     /**
+     * What should happen to a close request that stands to take [pinnedNames] with it.
+     *
      * @param pinnedNames presentable names of the pinned files in this close
      *   request; empty for a close that touches no pin.
      * @param pinnedIn where the pins were found, for the log only. Defaulted
-     *   because it never affects the decision.
-     * @return true if the close may proceed.
+     *   because it never affects the outcome.
      */
-    fun canClose(pinnedNames: List<String>, pinnedIn: List<String> = emptyList()): Boolean {
+    fun outcomeFor(pinnedNames: List<String>, pinnedIn: List<String> = emptyList()): CloseOutcome {
         val config = configProvider()
         val decision = decide(config, pinnedNames.size)
 
-        val allowed = when (decision) {
-            CloseDecision.ALLOW -> true
-            CloseDecision.BLOCK -> false
-            CloseDecision.ASK_USER -> prompt.confirmClosingPinned(pinnedNames)
+        val outcome = when (decision) {
+            CloseDecision.ALLOW -> CloseOutcome.UNOPPOSED
+            CloseDecision.BLOCK -> CloseOutcome.REFUSED
+            CloseDecision.ASK_USER ->
+                if (prompt.confirmClosingPinned(pinnedNames)) CloseOutcome.CONFIRMED else CloseOutcome.REFUSED
         }
 
         if (pinnedNames.isNotEmpty()) {
             LOG.info(
                 "$decision for $pinnedNames pinned in $pinnedIn " +
                     "(enabled=${config.enabled}, confirmInsteadOfBlock=${config.confirmInsteadOfBlock})" +
-                    " -> allowed=$allowed",
+                    " -> $outcome",
             )
         }
-        return allowed
+        return outcome
     }
+
+    /**
+     * The same question, for callers with only a yes or a no to act on.
+     *
+     * @return true if the close may proceed.
+     */
+    fun canClose(pinnedNames: List<String>, pinnedIn: List<String> = emptyList()): Boolean =
+        outcomeFor(pinnedNames, pinnedIn).allowsClosing
 
     private fun decide(config: PinGuardState, pinnedFileCount: Int): CloseDecision = when {
         !config.enabled -> CloseDecision.ALLOW

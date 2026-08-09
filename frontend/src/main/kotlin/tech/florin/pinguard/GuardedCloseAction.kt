@@ -21,6 +21,9 @@ private val LOG: Logger = Logger.getInstance(GuardedCloseAction::class.java)
  * presentation is forwarded untouched, so a guarded action is never disabled or
  * relabelled.
  *
+ * The original runs only where PinGuard has said nothing to the user: once a
+ * confirmation dialog has been up, the close is performed here instead.
+ *
  * Two ways a guarded action differs from the one it displaced, both deliberate:
  *  - Per-place text overrides are not carried across, because every way to move
  *    them is internal or protected platform API. The visible effect is confined to
@@ -85,11 +88,38 @@ internal open class GuardedCloseAction(
         val pinned = selector.pinnedAmong(targets)
         if (pinned.isEmpty()) return null
 
-        if (gate.canClose(pinned)) return null
+        return when (askAbout(pinned)) {
+            CloseOutcome.UNOPPOSED -> null
 
-        val pinnedFiles = pinned.map { it.file }.toSet()
-        return targets.filterNot { it.file in pinnedFiles }
+            // Closed here rather than handed back, because the platform's close
+            // actions re-read the editor when they run instead of closing what their
+            // event says. `CloseContent` keeps the tab a context menu was on only
+            // until the first turn of the event queue after the menu comes down, and
+            // getting a yes took a modal dialog, which pumps that queue.
+            CloseOutcome.CONFIRMED -> targets
+
+            CloseOutcome.REFUSED -> {
+                val pinnedFiles = pinned.map { it.file }.toSet()
+                targets.filterNot { it.file in pinnedFiles }
+            }
+        }
     }
+
+    /**
+     * The gate's answer, with a failure to reach one read as [CloseOutcome.REFUSED].
+     *
+     * Refused rather than allowed, unlike the failures around it: a prompt that throws
+     * may have had its dialog up already, and an event cannot be handed back once that
+     * has happened. Refusing keeps the pins and still closes the rest.
+     */
+    private fun askAbout(pinned: List<PinnedFile>): CloseOutcome =
+        try {
+            gate.outcomeFor(pinned)
+        } catch (failure: Throwable) {
+            rethrowIfUnrecoverable(failure)
+            LOG.warn("could not put ${pinned.map { it.presentableName }} to the user; keeping them open", failure)
+            CloseOutcome.REFUSED
+        }
 
     /**
      * Closes exactly [targets], reproducing the original's targeting: per split
