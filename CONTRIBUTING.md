@@ -326,6 +326,13 @@ block a release. Pinning `select { untilBuild = … }`, or naming builds with
   there is no cross-process routing to get wrong, but what a split-mode
   dispatcher makes of the resulting null behaviour has not been confirmed
   against a live session.
+- `AnAction.setShortcutSet` is `@ApiStatus.Internal` as well, and taking a guard
+  back off needs the displaced action handed to `replaceAction` empty — see
+  `PinGuardActionGuards.surrenderShortcutSet` for what that buys. It is emptied
+  by copying from a private action that has never held a shortcut, through the
+  public `copyShortcutFrom`, whose whole body is the assignment this would
+  otherwise be making by hand. The same call, made from inside the platform
+  rather than from here.
 - Wrapping the platform's close actions means depending on their action IDs.
   They are read defensively: an ID that no longer exists leaves that one action
   with its stock behaviour and logs a line. The failure mode is "that path stops

@@ -5,6 +5,7 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionPromoter
 import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CustomShortcutSet
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
@@ -193,6 +194,10 @@ public class PinGuardActionGuards : Disposable {
      * shortcuts the id owns. Nothing is surrendered permanently — the assignment
      * this defers to is the same one that gives the wrapper Cmd+W on the way in.
      *
+     * Emptied by copying from [NoShortcuts] rather than by assigning
+     * [CustomShortcutSet.EMPTY] directly; see that object for why the long way
+     * round is the supported one.
+     *
      * Done here rather than by not restoring at all during shutdown, which would
      * have quietened the logs by leaving a dynamic unload — the case [dispose] is
      * for — logging exactly as before.
@@ -203,10 +208,33 @@ public class PinGuardActionGuards : Disposable {
      */
     private fun surrenderShortcutSet(action: AnAction) {
         try {
-            action.shortcutSet = CustomShortcutSet.EMPTY
+            action.copyShortcutFrom(NoShortcuts)
         } catch (failure: Throwable) {
             rethrowIfUnrecoverable(failure)
             LOG.warn("could not clear a displaced action's shortcut set before restoring it", failure)
         }
     }
+}
+
+/**
+ * An action held only to be copied from, which is how [PinGuardActionGuards]
+ * says "carry no shortcuts" without reaching for internal API.
+ *
+ * [AnAction]'s constructor starts a shortcut set at [CustomShortcutSet.EMPTY], and
+ * this one is never registered under an id, so it stays there for as long as the
+ * plugin is loaded.
+ *
+ * Assigning `CustomShortcutSet.EMPTY` straight to `AnAction.setShortcutSet` says
+ * the same thing in one line, and did until that setter was marked
+ * `@ApiStatus.Internal` — which `verifyPlugin` fails the build on, and rightly:
+ * the annotation is the platform saying this is not a supported way to talk to it.
+ * [AnAction.copyShortcutFrom] is public and final, and its whole body is that same
+ * assignment, so the internal call moves inside the platform where it belongs and
+ * the behaviour does not move at all.
+ *
+ * [actionPerformed] is unreachable. Nothing registers this action, puts it in a
+ * menu, or dispatches to it; it exists to be read from.
+ */
+private object NoShortcuts : AnAction() {
+    override fun actionPerformed(e: AnActionEvent): Unit = Unit
 }
