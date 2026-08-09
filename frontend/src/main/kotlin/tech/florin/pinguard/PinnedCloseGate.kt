@@ -4,11 +4,7 @@ import com.intellij.openapi.diagnostic.Logger
 
 private val LOG: Logger = Logger.getInstance(PinnedCloseGate::class.java)
 
-/**
- * Asks the user whether pinned tabs may be closed after all.
- *
- * Split out from the gate so the decision can be tested without a UI.
- */
+/** Asks the user whether pinned tabs may be closed after all. */
 internal fun interface ConfirmationPrompt {
     /**
      * @param pinnedNames presentable names of the pinned files in this close
@@ -58,8 +54,6 @@ internal class PinnedCloseGate(
             CloseDecision.ASK_USER -> prompt.confirmClosingPinned(pinnedNames)
         }
 
-        // The one line a maintainer needs from a pasted idea.log: what PinGuard
-        // did, why, and where the pin lives.
         if (pinnedNames.isNotEmpty()) {
             LOG.info(
                 "$decision for $pinnedNames pinned in $pinnedIn " +
@@ -70,7 +64,6 @@ internal class PinnedCloseGate(
         return allowed
     }
 
-    /** The rule itself: a pure function of the settings and how much is pinned. */
     private fun decide(config: PinGuardState, pinnedFileCount: Int): CloseDecision = when {
         !config.enabled -> CloseDecision.ALLOW
         pinnedFileCount <= 0 -> CloseDecision.ALLOW
@@ -83,10 +76,8 @@ internal class PinnedCloseGate(
  * The gate as the running IDE builds it: user settings, and a real dialog.
  *
  * Both of PinGuard's entry points — the action guards and the pre-close check —
- * reach the same gate through here rather than each naming its collaborators, so
- * they cannot come to disagree about which settings are read or which prompt the
- * user sees. `PinGuardSettings.getInstance()` stays inside the lambda: it is read
- * per close, so a settings change takes effect without rebuilding anything.
+ * come through here, so they cannot disagree about which settings are read or
+ * which prompt the user sees.
  */
 internal fun platformGate(): PinnedCloseGate = PinnedCloseGate(
     configProvider = { PinGuardSettings.getInstance().config },

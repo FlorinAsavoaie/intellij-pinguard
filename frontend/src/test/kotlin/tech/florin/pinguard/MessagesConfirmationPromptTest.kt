@@ -5,14 +5,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import org.junit.jupiter.api.Test
 
-/**
- * The wording of the confirmation dialog, without putting one on screen.
- *
- * The dialog itself is [com.intellij.openapi.ui.Messages]' business; what
- * belongs to PinGuard is the arithmetic that keeps a "Close All" over fifty
- * pinned tabs from becoming an unreadable wall of names, and the singular the
- * common case deserves.
- */
+/** The wording of the confirmation dialog, without putting one on screen. */
 class MessagesConfirmationPromptTest {
 
     private fun message(vararg names: String) = MessagesConfirmationPrompt.messageFor(names.toList())

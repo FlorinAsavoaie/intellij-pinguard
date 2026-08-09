@@ -13,26 +13,16 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 private val LOG: Logger = Logger.getInstance(PinGuardActionGuards::class.java)
 
-/**
- * The terminal's own "Close Tab", which is what Cmd+W runs in a terminal tab.
- *
- * Named rather than inlined because several tests have to talk about it: it is the
- * one guarded id that belongs to a bundled plugin rather than to the platform, so
- * what it does and what it is bound to are the platform's to change.
- */
+/** The terminal's own "Close Tab", which is what Cmd+W runs in a terminal tab. */
 internal const val TERMINAL_CLOSE_TAB: String = "Terminal.CloseTab"
 
 /**
  * The close actions PinGuard wraps, each mapped to how its targets are worked out.
  *
- * [TERMINAL_CLOSE_TAB] is here because guarding `CloseContent` does not cover the
- * keystroke users think of as its own. The terminal plugin declares its own close
- * with `use-shortcut-of="CloseContent"`, so both answer Cmd+W; the platform then
- * asks every `ActionPromoter` to reorder the candidates and performs the first
- * *enabled* one, and the terminal's promotes itself. A terminal moved into the
- * editor and pinned there was therefore closed by an action PinGuard had never
- * heard of. It reaches the same `CloseAction.CloseTarget` that `CloseContent`
- * does, so [SingleTabScope] describes it exactly.
+ * [TERMINAL_CLOSE_TAB] is here because guarding `CloseContent` does not cover
+ * Cmd+W: the terminal plugin declares its own close with
+ * `use-shortcut-of="CloseContent"` and promotes itself past it, so a terminal
+ * moved into the editor and pinned there is closed by that action instead.
  *
  * Left out on purpose:
  *  - `CloseEditor`, the only action consulting `virtualFilePreCloseCheck`.
@@ -40,13 +30,9 @@ internal const val TERMINAL_CLOSE_TAB: String = "Terminal.CloseTab"
  *  - `CloseAllUnpinnedEditors`, which already leaves pinned tabs alone.
  *  - the tab's own close button, which already refuses to close a pinned tab and
  *    is constructed per tab rather than registered with [ActionManager].
- *  - Close to the Left/Right, Close Unmodified and Close Readonly.
+ *  - Close to the Left/Right, Close Unmodified and Close Readonly, whose shared
  *    `CloseEditorsActionBase` consults `EditorComposite.isPinned` before offering
- *    a tab up, so a pinned tab is never among the files any of them would close;
- *    guarding them cost a `setAccessible` call on a non-public platform method to
- *    re-refuse closes that were never going to happen. `GuardedCloseActionTest`
- *    holds the platform to that behaviour, and if it ever changes these four come
- *    back and the reflection with them.
+ *    a tab up. `GuardedCloseActionTest` holds the platform to that.
  *  - `Terminal.CloseSession`, the terminal's Ctrl+D, which only writes EOF to the
  *    shell. The tab that follows is closed by `TerminalViewFileEditor` when the
  *    session terminates — programmatically, so no action-layer guard can see it.
@@ -54,8 +40,6 @@ internal const val TERMINAL_CLOSE_TAB: String = "Terminal.CloseTab"
 internal val GUARDED: Map<String, CloseActionScope> = mapOf(
     "CloseContent" to SingleTabScope,
     "CloseAllEditors" to AllTabsScope,
-    // Wrapped for one of its two branches only; see [OtherTabsScope] for which,
-    // and why the other one is the platform's business rather than PinGuard's.
     "CloseAllEditorsButActive" to OtherTabsScope,
     TERMINAL_CLOSE_TAB to SingleTabScope,
 )
@@ -63,10 +47,9 @@ internal val GUARDED: Map<String, CloseActionScope> = mapOf(
 /**
  * Holds the close-action guards for as long as the plugin is loaded.
  *
- * An application service rather than a one-shot install because
- * [ActionManager.replaceAction] mutates IDE-wide state: the install then happens
- * exactly once however many projects are open, and the displaced actions have
- * somewhere to wait until the plugin is unloaded.
+ * [ActionManager.replaceAction] mutates IDE-wide state, so this is an application
+ * service: the guards go on once however many projects are open, and the displaced
+ * actions have somewhere to wait until the plugin is unloaded.
  *
  * [PinGuardCloseActions] is what brings this into existence; nothing else calls
  * [ensureInstalled].
@@ -81,9 +64,6 @@ public class PinGuardActionGuards : Disposable {
 
     private val installed = AtomicBoolean(false)
 
-    // Held as fields rather than built per close: both are stateless and reach for
-    // no service, which keeps the service constructor within the "fast, and no
-    // other services" rule that ensureInstalled exists to honour.
     private val selector = PlatformPinnedFiles.selector()
 
     private val gate = platformGate()
@@ -91,9 +71,9 @@ public class PinGuardActionGuards : Disposable {
     /**
      * Installs the guards, once, however many projects open.
      *
-     * Deliberately not the constructor's work: a service constructor is required
-     * to be fast and not to reach for other services, and installing means
-     * acquiring [ActionManager] and rewriting IDE-wide action state.
+     * Not the constructor's work: a service constructor must be fast and must not
+     * reach for other services, and installing acquires [ActionManager] and
+     * rewrites IDE-wide action state.
      */
     internal fun ensureInstalled() {
         if (installed.compareAndSet(false, true)) {
@@ -125,15 +105,9 @@ public class PinGuardActionGuards : Disposable {
     /**
      * The wrapper for [original], carrying across whichever markers it had.
      *
-     * Branching on the markers rather than on the id keeps a wrapper from ever
-     * adding or dropping a capability the original did not carry, including for any
-     * action [GUARDED] grows.
-     *
-     * No action the platform ships carries both markers, so there is no combined
-     * variant here and this reads them in a fixed order rather than as a matrix.
-     * `PinGuardActionGuardsTest` holds the platform to that: the day a guarded
-     * action is both [LightEditCompatible] and an [ActionPromoter], it fails rather
-     * than letting this silently drop one of the two.
+     * No action the platform ships carries both, so there is no combined variant.
+     * `PinGuardActionGuardsTest` fails the day one does, rather than letting this
+     * silently drop the second.
      */
     private fun wrap(original: AnAction, scope: CloseActionScope): GuardedCloseAction = when (original) {
         is LightEditCompatible -> GuardedLightEditCloseAction(original, scope, selector, gate)
@@ -145,13 +119,13 @@ public class PinGuardActionGuards : Disposable {
      * Puts the platform's own actions back, so an unloaded plugin leaves behind no
      * wrappers still referencing its classes.
      *
-     * Safe to call more than once, and safe during shutdown: the [ActionManager]
-     * lookup is inside the guard because the service container may already be
-     * cancelled, and a `ProcessCanceledException` escaping a `dispose()` is itself
-     * an error the platform reports.
+     * Safe to call more than once, and safe during shutdown.
      */
     override fun dispose() {
         try {
+            // Inside the guard: during shutdown the service container may already be
+            // cancelled, and a `ProcessCanceledException` escaping a `dispose()` is
+            // itself an error the platform reports.
             val actions = ActionManager.getInstance()
             displaced.forEach { (id, original) ->
                 surrenderShortcutSet(original)
@@ -162,8 +136,8 @@ public class PinGuardActionGuards : Disposable {
             LOG.warn("could not restore the platform's close actions while unloading", failure)
         } finally {
             displaced.clear()
-            // So a service that is disposed and used again installs afresh rather
-            // than believing it already has.
+            // So a service disposed and used again installs afresh rather than
+            // believing it already has.
             installed.set(false)
         }
     }
@@ -172,41 +146,21 @@ public class PinGuardActionGuards : Disposable {
      * Empties [action]'s shortcut set so the [ActionManager.replaceAction] that
      * follows can assign the id's own without the platform logging at us.
      *
-     * `replaceAction` assigns the action id's shortcut set to whatever it registers,
-     * and `AnAction.setShortcutSet` logs a `PluginException` against this plugin
-     * whenever the action it assigns to is registered under an id *and* already
-     * carries a set that is not [CustomShortcutSet.EMPTY]. Installing is silent
-     * because a freshly built [GuardedCloseAction] starts empty — see the note on
-     * that class, which is where this was first paid for. Restoring is not: the
-     * original has carried the keymap's shortcuts since the IDE registered it, so
-     * the assignment on the way back out logs once per guarded action:
-     *
-     *     ShortcutSet of global AnActions should not be changed outside of
-     *     KeymapManager. Action: Close Tab (Close currently focused content)
-     *
-     * and the first of them, when it lands during application shutdown, drags
-     * `PluginProblemReporterImpl is initialized during dispose` along with it,
-     * because building that exception instantiates a service the container is busy
-     * tearing down.
-     *
-     * Handing the action back empty is what makes it symmetric: it goes into
-     * `replaceAction` in the same state a wrapper does, and comes out holding the
-     * shortcuts the id owns. Nothing is surrendered permanently — the assignment
-     * this defers to is the same one that gives the wrapper Cmd+W on the way in.
-     *
-     * Emptied by copying from [NoShortcuts] rather than by assigning
-     * [CustomShortcutSet.EMPTY] directly; see that object for why the long way
-     * round is the supported one.
-     *
-     * Done here rather than by not restoring at all during shutdown, which would
-     * have quietened the logs by leaving a dynamic unload — the case [dispose] is
-     * for — logging exactly as before.
-     *
-     * The write is guarded on its own: a wrapper for one id must still be taken off
-     * even if this throws for another, and the shortcut set is not what makes the
-     * restore worth doing.
+     * Nothing is surrendered permanently: that assignment is the same one which
+     * gives a wrapper Cmd+W on the way in.
      */
     private fun surrenderShortcutSet(action: AnAction) {
+        // `replaceAction` assigns the id's shortcut set to whatever it registers, and
+        // `AnAction.setShortcutSet` logs a `PluginException` against this plugin when
+        // the target is registered under an id and already carries a non-empty set.
+        // Installing is silent because a fresh wrapper starts empty; a displaced
+        // action has held the keymap's shortcuts since the IDE registered it, so
+        // without this the restore logs once per guarded action — and the first of
+        // those, landing during shutdown, drags
+        // `PluginProblemReporterImpl is initialized during dispose` with it.
+        //
+        // Guarded on its own: a wrapper for one id must still come off even if this
+        // throws for another.
         try {
             action.copyShortcutFrom(NoShortcuts)
         } catch (failure: Throwable) {
@@ -221,20 +175,15 @@ public class PinGuardActionGuards : Disposable {
  * says "carry no shortcuts" without reaching for internal API.
  *
  * [AnAction]'s constructor starts a shortcut set at [CustomShortcutSet.EMPTY], and
- * this one is never registered under an id, so it stays there for as long as the
- * plugin is loaded.
+ * this one is never registered under an id, so it stays there.
  *
- * Assigning `CustomShortcutSet.EMPTY` straight to `AnAction.setShortcutSet` says
- * the same thing in one line, and did until that setter was marked
- * `@ApiStatus.Internal` — which `verifyPlugin` fails the build on, and rightly:
- * the annotation is the platform saying this is not a supported way to talk to it.
- * [AnAction.copyShortcutFrom] is public and final, and its whole body is that same
- * assignment, so the internal call moves inside the platform where it belongs and
- * the behaviour does not move at all.
- *
- * [actionPerformed] is unreachable. Nothing registers this action, puts it in a
- * menu, or dispatches to it; it exists to be read from.
+ * The direct equivalent — assigning `CustomShortcutSet.EMPTY` to
+ * `AnAction.setShortcutSet` — is `@ApiStatus.Internal`, which `verifyPlugin` fails
+ * the build on. [AnAction.copyShortcutFrom] is public and final and its whole body
+ * is that same assignment.
  */
 private object NoShortcuts : AnAction() {
+    // Unreachable: nothing registers this action, puts it in a menu, or dispatches
+    // to it.
     override fun actionPerformed(e: AnActionEvent): Unit = Unit
 }

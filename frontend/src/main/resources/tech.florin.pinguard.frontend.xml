@@ -1,12 +1,10 @@
 <!--
   PinGuard's only content module, and where all of its behaviour is registered.
 
-  The file name is not decorative: the platform resolves a `<content>` module by
-  looking for a descriptor named after it, so this must stay in step with
-  META-INF/plugin.xml. PluginDescriptorTest asserts that it does.
-
-  Note the absence of `<depends>`, which a module descriptor may not use, and of
-  META-INF — a module descriptor sits at the resource root.
+  The platform resolves a `<content>` module by looking for a descriptor named
+  after it, so this file name must stay in step with META-INF/plugin.xml, and it
+  sits at the resource root rather than under META-INF. PluginDescriptorTest
+  asserts both.
 -->
 <idea-plugin>
     <dependencies>

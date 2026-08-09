@@ -10,8 +10,7 @@ import com.intellij.openapi.vfs.VirtualFile
  * One tab a close action is about to close.
  *
  * [window] is the split holding the tab, or null when the action closes the file
- * across every split at once. Keeping the distinction lets a narrowed close
- * reproduce the original's targeting exactly.
+ * across every split at once.
  */
 internal data class CloseTarget(
     val file: VirtualFile,
@@ -22,8 +21,7 @@ internal data class CloseTarget(
  * Works out which tabs one of the platform's close actions is about to close.
  *
  * Returning null means "cannot tell", and the guard then stands aside and lets the
- * action run untouched. Guessing would be worse than not guarding: a wrong guess
- * either strands tabs the user asked to close or silently drops a pin.
+ * action run untouched.
  */
 internal fun interface CloseActionScope {
     fun targets(event: AnActionEvent): List<CloseTarget>?
@@ -58,9 +56,9 @@ private fun projectWideTargets(
 }
 
 /**
- * `CloseAllEditors`. It extends `AnAction` directly rather than
- * `CloseEditorsActionBase`, so there is nothing to interrogate and its two
- * branches are mirrored here from its own implementation.
+ * `CloseAllEditors`. Its two branches are mirrored from the platform's own
+ * implementation, which extends `AnAction` directly and so offers nothing to
+ * interrogate.
  */
 internal val AllTabsScope = CloseActionScope { event ->
     val window = event.getData(EditorWindow.DATA_KEY)
@@ -71,28 +69,13 @@ internal val AllTabsScope = CloseActionScope { event ->
     }
 }
 
-/**
- * `CloseAllEditorsButActive` — Close Others — on the one branch of it that can
- * reach a pinned tab.
- *
- * The action has two, and only the second needs guarding:
- *
- *  - With an editor window in the event — the tab's context menu, or anything
- *    invoked with the focus in the editor — it closes through
- *    `EditorWindow.closeAllExcept`, which skips pinned files itself. A pinned tab
- *    was never among the tabs that close would take, so this names no targets and
- *    the action runs exactly as the IDE ships it.
- *  - With no editor window — **Window | Editor Tabs | Close Others** while the
- *    focus is in a tool window, or the same action from Find Action — it closes
- *    each sibling through `FileEditorManagerEx.closeFile`, which has no pin check
- *    at all. That is the branch guarded here.
- *
- * The empty list is not a null: to [GuardedCloseAction] both mean "run the
- * original untouched", but "this close was never going to touch a pin" is a
- * decision, where null is the absence of one.
- */
+/** `CloseAllEditorsButActive` — Close Others. */
 internal val OtherTabsScope = CloseActionScope { event ->
     if (event.getData(EditorWindow.DATA_KEY) != null) {
+        // With a window the action closes through `EditorWindow.closeAllExcept`,
+        // which skips pinned files itself; without one it closes each sibling
+        // through `FileEditorManagerEx.closeFile`, which has no pin check at all.
+        // Only the second branch can reach a pin, so only it is guarded.
         emptyList()
     } else {
         // Keyed on the selected file rather than on the event's VIRTUAL_FILE,

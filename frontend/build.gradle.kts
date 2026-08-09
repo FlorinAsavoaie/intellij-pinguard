@@ -1,68 +1,47 @@
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
-/**
- * The jar has to be named after the content module it carries.
- *
- * The platform resolves `<content><module name="X"/></content>` by loading
- * `lib/modules/X.jar` and reading `X.xml` out of it; the module jars are not part
- * of the plugin's own descriptor classpath, so a jar under any other name is
- * never opened and the module fails to load with "Cannot resolve X.xml". Gradle's
- * default here would be `<rootProject.name>.<project.path>` — `pinguard.frontend`
- * — which is close enough to look right and still wrong.
- */
+// The jar has to be named after the content module it carries: the platform
+// resolves `<content><module name="X"/></content>` by loading `lib/modules/X.jar`
+// and reading `X.xml` out of it, so a jar under any other name is never opened and
+// the module fails with "Cannot resolve X.xml". Gradle's default would be
+// `pinguard.frontend`, which is close enough to look right and still wrong.
 tasks.named<org.jetbrains.intellij.platform.gradle.tasks.ComposedJarTask>("composedJar") {
     archiveBaseName = "tech.florin.pinguard.frontend"
 }
 
 dependencies {
     intellijPlatform {
-        // Declared here rather than left to the root project. Without it,
-        // resolving this module's classpath reaches sideways into the root's
-        // `:intellijPlatformDependency`, and Gradle 9 refuses cross-project
-        // resolution without an exclusive lock — which `org.gradle.parallel` in
-        // gradle.properties means it does not hold.
-        //
-        // Nothing about that fails loudly. `./gradlew build` resolves in a
-        // context that does hold the lock, so only the per-module resolution the
-        // IDE runs at sync time trips it, and the sync then reports success
-        // while handing the IDE a `frontend` module with an empty classpath.
-        // What that looks like is every reference in this source set unresolved
-        // — `com.intellij`, and, because `kotlin.stdlib.default.dependency =
-        // false` puts the stdlib on the platform too, `listOf` beside it.
+        // Declared here rather than left to the root project. Without it, resolving
+        // this module's classpath reaches sideways into the root's
+        // `:intellijPlatformDependency`, which Gradle 9 refuses without an exclusive
+        // lock that `org.gradle.parallel` means it does not hold — and it fails
+        // quietly: only the per-module resolution the IDE runs at sync time trips it,
+        // reporting success while handing the IDE an empty classpath for `frontend`.
         intellijIdea(providers.gradleProperty("platformVersion"))
 
-        // The dependency that decides where this module runs. The platform loads
-        // a content module only where its dependencies resolve, and
-        // `intellij.platform.frontend` resolves in exactly two places: a plain
-        // monolithic IDE, and the JetBrains Client that renders the editor in a
-        // remote development or Code With Me session. Both are processes that own
-        // real editor windows — which is the whole point.
+        // The dependency that decides where this module runs. The platform loads a
+        // content module only where its dependencies resolve, and
+        // `intellij.platform.frontend` resolves in exactly two places: a monolithic
+        // IDE, and the JetBrains Client that renders the editor in a remote
+        // development or Code With Me session. Both own real editor windows.
         bundledModule("intellij.platform.frontend")
 
-        // The terminal, for the tests alone. `Terminal.CloseTab` is the one id in
-        // `GUARDED` that belongs to a bundled plugin rather than to the platform,
-        // and the tests that hold the platform to what it does — that it answers
-        // CloseContent's shortcut, and that it promotes itself past it — need it
-        // registered to say anything at all. Without this the whole close-guard
-        // suite fails on a plugin set that happens not to carry the terminal.
+        // `Terminal.CloseTab` is the one id in `GUARDED` belonging to a bundled
+        // plugin rather than to the platform, and the tests that hold the platform to
+        // what it does need it registered to say anything at all.
         //
-        // `testBundledPlugin` rather than `bundledPlugin`: PinGuard names the
-        // action by id through `ActionManager` and links against nothing in the
-        // terminal, so putting it on the production compile classpath would
-        // declare a dependency the plugin does not have. Nothing changes for a
-        // user whose IDE ships no terminal either — `PinGuardActionGuards.guard`
-        // logs the missing id and moves on.
+        // `testBundledPlugin` rather than `bundledPlugin`: PinGuard names the action
+        // by id and links against nothing in the terminal, so the production compile
+        // classpath would be declaring a dependency the plugin does not have.
         testBundledPlugin("org.jetbrains.plugins.terminal")
 
         // Brings in com.intellij.testFramework, so a test can start a real
         // application and open a real project.
         //
-        // Bundled rather than Platform: the two resolve to different jars, and
-        // only the bundled `lib/testFramework.jar` carries
-        // `com.intellij.testFramework.junit5`. Those JUnit 5 fixtures are what
-        // let the platform tests here run on the same engine as everything else
-        // — `BasePlatformTestCase` is JUnit 3, and under `useJUnitPlatform()`
-        // would need a vintage engine merely to be discovered.
+        // Bundled rather than Platform: only the bundled `lib/testFramework.jar`
+        // carries `com.intellij.testFramework.junit5`, whose fixtures let these tests
+        // run on the same engine as everything else — `BasePlatformTestCase` is JUnit
+        // 3 and would need a vintage engine merely to be discovered.
         testFramework(TestFrameworkType.Bundled)
     }
 
@@ -76,37 +55,19 @@ dependencies {
     testRuntimeOnly("junit:junit:4.13.2")
 }
 
-/**
- * The plugin's identity, which lives in the root project, put where the tests can
- * read it.
- *
- * The tests are here, with the code they exercise, because that is what makes
- * Kotlin's `internal` visible to them: visibility is per compilation, and almost
- * all of PinGuard is internal. Test-compiling them in the root project instead
- * needs `-Xfriend-paths` pointing at this project's jar — which works, and which
- * the IDE has no way to know about, so every `internal` reference in the suite
- * reads as an error in the editor while Gradle compiles it clean.
- *
- * What the root project has that this one does not is `META-INF/plugin.xml`, and
- * a test gets the plugin registered by having that on the classpath. Not out of
- * the sandbox: `prepareTestSandbox` here installs this project's own jar, which is
- * a content module and not a plugin at all. Without the descriptor,
- * `PinnedTabCloseGuardPlatformTest` finds PinGuard on no extension point.
- *
- * Prepended, rather than added as a `testRuntimeOnly` dependency, because being
- * *first* is the part that matters. The platform ships its own
- * `META-INF/plugin.xml` in `app.jar`, `getResourceAsStream` returns whichever
- * comes first, and this task's classpath is not the test source set's: the
- * IntelliJ Platform Gradle plugin rebuilds it with the sandbox and the platform
- * in front and the source set's own output behind them — which is how the root
- * project used to win this without anyone arranging it, its sandbox holding a
- * composed jar with the descriptor inside. Anywhere behind `app.jar` and every
- * assertion in `PluginDescriptorTest` reads `com.intellij`'s descriptor instead.
- *
- * The patched copy rather than `src/main/resources`: `patchPluginXml` writes the
- * version and the since-build, so its output is the descriptor that ships. Naming
- * the task is also what orders it before this project's tests.
- */
+// The tests live here, with the code they exercise, because Kotlin visibility is
+// per compilation and almost all of PinGuard is `internal`. What the root project
+// has that this one does not is `META-INF/plugin.xml`, and a test only gets the
+// plugin registered by having that on the classpath — not out of the sandbox, which
+// holds this project's own jar, a content module rather than a plugin.
+//
+// Prepended rather than added as a `testRuntimeOnly` dependency, because being
+// *first* is the part that matters: the platform ships its own `META-INF/plugin.xml`
+// in `app.jar` and `getResourceAsStream` returns whichever comes first. Anywhere
+// behind it and `PluginDescriptorTest` reads `com.intellij`'s descriptor instead.
+//
+// The patched copy rather than `src/main/resources`, since `patchPluginXml` writes
+// the version and the since-build; naming the task also orders it before the tests.
 tasks.test {
     classpath = files(rootProject.tasks.named("processResources")) + classpath
 
@@ -116,36 +77,24 @@ tasks.test {
     }
 }
 
-/**
- * Keeps bundled plugins that PinGuard does not exercise out of the test IDE.
- *
- * The test framework fails a test on any error the platform *logs*, wherever it
- * came from, and the suites built on [RealEditorTestCase] open real files in a
- * real editor — which makes the platform enumerate every `LspServerSupportProvider`
- * there is. Vue's throws while being constructed on this distribution:
- *
- *     IllegalStateException: .../plugins/vuejs-plugin/lib/modules should be lib directory
- *
- * It arrives on a pooled thread, so it lands on whichever test is running rather
- * than on one in particular, and it takes the whole suite down with it — 44 tests
- * on the run that prompted this, plus a Disposer leak at shutdown from the
- * teardown those failures skipped.
- *
- * None of that is PinGuard's, and none of it is reachable from anything PinGuard
- * does: the plugin guards close actions on editor tabs and never asks what
- * language a file is. Disabling the plugin prevents the error rather than
- * swallowing it, which is the reason this is here and not a `LoggedErrorProcessor`
- * filtering the log — a filter would hide PinGuard's own errors just as well.
- *
- * Written through the sandbox task rather than by hand into `disabled_plugins.txt`
- * because `prepareTestSandbox` rewrites that file from this property on every run;
- * a copy edited in place survives exactly until the next build, which is what made
- * this look intermittent rather than broken.
- *
- * If another bundled plugin starts doing the same, add it here. The list is
- * deliberately specific: disabling by guesswork would mean the suite stops
- * exercising the platform it ships against.
- */
+// Keeps bundled plugins that PinGuard does not exercise out of the test IDE.
+//
+// The test framework fails a test on any error the platform *logs*, and opening real
+// files in a real editor makes it enumerate every `LspServerSupportProvider` there
+// is. Vue's throws while being constructed on this distribution:
+//
+//     IllegalStateException: .../plugins/vuejs-plugin/lib/modules should be lib directory
+//
+// It arrives on a pooled thread, so it lands on whichever test happens to be running
+// and takes the suite down with it. Disabling the plugin prevents the error rather
+// than swallowing it, which a `LoggedErrorProcessor` filter would do to PinGuard's
+// own errors just as readily.
+//
+// Through the sandbox task rather than by hand into `disabled_plugins.txt`, which
+// `prepareTestSandbox` rewrites from this property on every run.
+//
+// Add another only when it does the same; disabling by guesswork means the suite
+// stops exercising the platform it ships against.
 tasks.named<org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask>("prepareTestSandbox") {
     disabledPlugins.add("org.jetbrains.plugins.vue")
 }

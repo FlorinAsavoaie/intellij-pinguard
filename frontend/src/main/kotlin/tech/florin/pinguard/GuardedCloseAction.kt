@@ -16,40 +16,19 @@ private val LOG: Logger = Logger.getInstance(GuardedCloseAction::class.java)
 /**
  * Wraps one of the platform's close actions and keeps pinned tabs out of it.
  *
- * A refusal narrows the action to its unpinned tabs rather than cancelling it: a
- * "Close All" that silently did nothing because one tab was pinned would be a
- * worse bug than the one this plugin fixes. The presentation is forwarded
- * untouched, so a guarded action is never disabled or relabelled.
+ * A refusal narrows the action to its unpinned tabs rather than cancelling it, so
+ * a guarded "Close All" still closes everything that is not pinned. The
+ * presentation is forwarded untouched, so a guarded action is never disabled or
+ * relabelled.
  *
- * Guarding at the action layer is what makes the plugin work at all — the
- * platform's own veto hook is consulted from `CloseEditor` alone, which has no
- * default shortcut and appears in no menu — and it also makes the guard
- * structurally incapable of interfering with project or IDE shutdown, neither of
- * which dispatches actions. Because this class lives in the plugin's frontend
- * module, the `ActionManager` it displaces an action in belongs to whichever
- * process owns the editor tabs — a monolithic IDE, or the JetBrains Client in a
- * remote development session — so the close runs where the tabs are, as it always
- * did.
- *
- * Three known limits, all of them to keep the Plugin Verifier clean:
- *  - This extends [AnAction] and forwards by hand rather than extending
- *    `AnActionWrapper`, whose constructor calls `AnAction.copyFrom` and so copies
- *    the delegate's shortcut set; `ActionManager.replaceAction` then assigns the
- *    action id's own, and `AnAction.setShortcutSet` logs a `PluginException`
- *    against this plugin for that second assignment. Only the shortcut set was
- *    ever the problem, so the presentation is copied by hand below. Starting
- *    empty is what buys the silence, which is why taking a guard back off has to
- *    arrange the same state by hand — see `PinGuardActionGuards.surrenderShortcutSet`.
- *  - Per-place text overrides are not carried across. They live on the action
- *    rather than on its presentation, and every way to move them —
- *    `applyTextOverride`, which the verifier reports as internal, or
- *    `copyActionTextOverrides`, which is protected and copies the wrong way round
- *    — costs more than it buys. The visible effect is confined to `CloseContent`:
- *    the tab's context menu reads "Close Tab" where the stock IDE says "Close".
- *  - The wrapped actions all carry `ActionRemoteBehaviorSpecification.Frontend`,
- *    which is `@ApiStatus.Internal` and cannot be reproduced here, so a wrapped
- *    action loses the marker and `getActionBehavior` answers null rather than
- *    `Frontend` for it.
+ * Two ways a guarded action differs from the one it displaced, both deliberate:
+ *  - Per-place text overrides are not carried across, because every way to move
+ *    them is internal or protected platform API. The visible effect is confined to
+ *    `CloseContent`, whose tab context menu reads "Close Tab" where the stock IDE
+ *    says "Close".
+ *  - `ActionRemoteBehaviorSpecification.Frontend` is `@ApiStatus.Internal` and
+ *    cannot be reproduced here, so `getActionBehavior` answers null for a wrapped
+ *    action rather than `Frontend`.
  */
 internal open class GuardedCloseAction(
     private val original: AnAction,
@@ -60,9 +39,16 @@ internal open class GuardedCloseAction(
 
     init {
         // Menus, Settings | Keymap and Find Action all render an action from its
-        // template presentation, and `replaceAction` carries none of it across, so
-        // without this the whole close family loses its labels — neither action's
+        // template presentation and `replaceAction` carries none of it across, so
+        // without this the close family loses its labels — no wrapped action's
         // `update` sets its own text.
+        //
+        // Copied by hand rather than by extending `AnActionWrapper`, which would
+        // also copy the delegate's shortcut set. The wrapper has to reach
+        // `replaceAction` with an empty one, or `AnAction.setShortcutSet` logs a
+        // `PluginException` against this plugin; see
+        // `PinGuardActionGuards.surrenderShortcutSet` for the same dance on the way
+        // back out.
         templatePresentation.copyFrom(original.templatePresentation)
     }
 
@@ -108,17 +94,15 @@ internal open class GuardedCloseAction(
     /**
      * Closes exactly [targets], reproducing the original's targeting: per split
      * when the event named one, else project-wide.
-     *
-     * Inside one command, as `CloseAllEditorsAction` and `CloseEditorsActionBase`
-     * both do. Closing a tab starts a command of its own, so without an outer one
-     * a narrowed "Close All" is a run of N separate commands where the action it
-     * replaced was a single named one — a difference command listeners and
-     * `IdeDocumentHistory` grouping both see.
      */
     private fun closeExactly(event: AnActionEvent, targets: List<CloseTarget>) {
         val project = event.project
         val manager = project?.let { FileEditorManagerEx.getInstanceEx(it) }
 
+        // One command, as the actions this replaces both use. Closing a tab starts a
+        // command of its own, so without an outer one a narrowed "Close All" becomes
+        // a run of N commands where the original was a single named one — which
+        // command listeners and `IdeDocumentHistory` grouping both see.
         CommandProcessor.getInstance().executeCommand(
             project,
             {
@@ -136,9 +120,8 @@ internal open class GuardedCloseAction(
 /**
  * The variant for `CloseContent`, whose original is [LightEditCompatible].
  *
- * The marker is carried per-action rather than put on [GuardedCloseAction]: adding
- * it to the Close All family would newly admit those actions to LightEdit mode,
- * which is a behaviour change this plugin has no business making.
+ * Per-action rather than on [GuardedCloseAction] itself, which would newly admit
+ * the Close All family to LightEdit mode.
  */
 internal class GuardedLightEditCloseAction(
     original: AnAction,
@@ -150,24 +133,9 @@ internal class GuardedLightEditCloseAction(
 /**
  * The variant for `Terminal.CloseTab`, whose original is an [ActionPromoter].
  *
- * Carrying the marker across is what keeps wrapping from quietly moving a
- * keystroke: `Terminal.CloseTab` and `CloseContent` both answer Cmd+W, and it is
- * the promotion that decides which of them the platform performs. A wrapper
- * without it would hand Cmd+W back to `CloseContent` — still guarded, so the user
- * would see the same outcome, but by a different route than the one anyone
- * debugging this would be reading.
- *
- * [promote] answers `this` rather than delegating to the original, and that is not
- * a shortcut. `Utils.rearrangeByPromotersImpl` splices whatever a promoter returns
- * into the head of the candidate list, so delegating would insert the *displaced*
- * action — the unguarded one — and the platform would perform it. Answering `this`
- * is also exactly what the original does: `TerminalPromotedDumbAwareAction.promote`
- * returns `listOf(this)` unconditionally, which `PinGuardActionGuardsTest` holds
- * the platform to.
- *
- * [suppress] is deliberately not overridden. The base the terminal's action
- * inherits does not implement it either, so forwarding would be inventing
- * behaviour rather than preserving it.
+ * `Terminal.CloseTab` and `CloseContent` both answer Cmd+W, and the promotion is
+ * what decides which of them the platform performs; a wrapper without the marker
+ * would silently hand the keystroke back to `CloseContent`.
  */
 internal class GuardedPromotedCloseAction(
     original: AnAction,
@@ -176,5 +144,8 @@ internal class GuardedPromotedCloseAction(
     gate: PinnedCloseGate,
 ) : GuardedCloseAction(original, scope, selector, gate), ActionPromoter {
 
+    // `this`, not the original: `Utils.rearrangeByPromotersImpl` splices whatever a
+    // promoter returns into the head of the candidate list, so delegating would
+    // insert the displaced, unguarded action and the platform would perform it.
     override fun promote(actions: List<AnAction>, context: DataContext): List<AnAction>? = listOf(this)
 }

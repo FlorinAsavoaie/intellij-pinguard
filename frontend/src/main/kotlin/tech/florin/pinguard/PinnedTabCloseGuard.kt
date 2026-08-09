@@ -10,16 +10,14 @@ private val LOG: Logger = Logger.getInstance(PinnedTabCloseGuard::class.java)
  * Vetoes closing a pinned editor tab, on the one close path the platform offers a
  * supported veto for.
  *
- * Registered on `com.intellij.virtualFilePreCloseCheck`, which only
- * `FileEditorManagerImpl.closeFileWithChecks` consults — reached only from the
- * `CloseEditor` action, which ships with no keyboard shortcut and in no menu. The
- * closes users actually perform are guarded by [PinGuardActionGuards] instead;
- * this hook costs almost nothing and covers `closeFileWithChecks` for free should
- * it ever regain callers.
+ * `com.intellij.virtualFilePreCloseCheck` is consulted only by
+ * `FileEditorManagerImpl.closeFileWithChecks`, which today is reached only from
+ * the `CloseEditor` action — no keyboard shortcut, in no menu. The closes users
+ * actually perform are guarded by [PinGuardActionGuards] instead.
  *
- * `VirtualFilePreCloseCheck` is `@ApiStatus.Experimental`, so it may change or
- * disappear without a deprecation cycle. That is survivable because nothing
- * depends on it: losing this hook costs the `CloseEditor` path and nothing else.
+ * The extension point is `@ApiStatus.Experimental` and may change or disappear
+ * without a deprecation cycle; losing it costs the `CloseEditor` path and nothing
+ * else.
  *
  * Programmatic closes, including closing the project itself, bypass these checks,
  * so a veto here cannot strand the IDE.

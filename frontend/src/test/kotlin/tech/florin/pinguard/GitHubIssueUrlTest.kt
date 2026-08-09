@@ -9,8 +9,7 @@ import org.junit.jupiter.api.Test
 
 /**
  * The URL composer. Its one unconditional promise is that whatever it is handed,
- * the URL it produces is short enough for GitHub to accept — overshooting shows
- * the user a bare "Internal server error" that the plugin cannot detect.
+ * the URL it produces is short enough for GitHub to accept.
  */
 class GitHubIssueUrlTest {
 
@@ -135,8 +134,7 @@ class GitHubIssueUrlTest {
         val title = GitHubIssueUrl.title(report(message = "🐛".repeat(300)))
 
         // Each emoji costs twelve bytes encoded, so the character cap alone leaves a
-        // title four times over the byte budget: it is the shrink loop and not the
-        // cap that has to bound this.
+        // title four times over the byte budget.
         assertTrue(
             URLEncoder.encode(title, StandardCharsets.UTF_8).length <= 300,
             "asserting code points here would pass on any implementation, cap or no cap",
@@ -175,9 +173,7 @@ class GitHubIssueUrlTest {
 
     @Test
     fun `a comment written in a wide script does not evict the whole report`() {
-        // 400 CJK characters is inside the code-point cap but three bytes each once
-        // encoded, which is enough to fail every rung that drops the comment whole
-        // rather than shortening it.
+        // Inside the code-point cap, but three bytes a character once encoded.
         val prepared = GitHubIssueUrl.forNewIssue(report(userComment = "中".repeat(400)))
 
         assertTrue(prepared.url.length <= GitHubIssueUrl.MAX_URL_BYTES)
@@ -212,8 +208,8 @@ class GitHubIssueUrlTest {
 
     @Test
     fun `a comment long enough to be cut is always marked, so it reaches the clipboard`() {
-        // Nothing else would copy it: the submitter only reaches for the clipboard
-        // when the issue says something was left out.
+        // The submitter only reaches for the clipboard when the issue says something
+        // was left out.
         assertTrue(GitHubIssueUrl.forNewIssue(report(userComment = "z".repeat(5_000))).truncated)
     }
 
@@ -229,9 +225,8 @@ class GitHubIssueUrlTest {
 
     @Test
     fun `a cause chain too deep to keep even one frame each still spends the budget`() {
-        // Every block header survives every quota, so past about thirty nested
-        // causes the headers alone overrun the budget and the search for a frame
-        // quota fails outright.
+        // Every block header survives every quota, so past about thirty nested causes
+        // the headers alone overrun the budget and the frame-quota search fails.
         val chain = buildList {
             add("java.lang.IllegalStateException: outer")
             repeat(50) { block ->
@@ -263,8 +258,7 @@ class GitHubIssueUrlTest {
 
     @Test
     fun `a fence forced wide by backticks is narrowed with the trace it wraps`() {
-        // The fence has to outrun the longest backtick run in the text it wraps, so
-        // sizing it from the uncut trace can cost more than the trace itself.
+        // Sizing the fence from the uncut trace can cost more than the trace itself.
         val trace = listOf(
             "java.lang.RuntimeException: see ${"`".repeat(400)} here",
             *Array(200) { "\tat tech.florin.One.frame$it(One.kt:$it)" },
@@ -343,8 +337,6 @@ class GitHubIssueUrlTest {
 
     @Test
     fun `labels, assignees and milestones are never asked for`() {
-        // GitHub answers 404 to anyone without the matching permission on the
-        // repository, and a stranger reporting a crash is exactly that.
         val url = GitHubIssueUrl.forNewIssue(report()).url
 
         assertFalse(url.contains("labels="))

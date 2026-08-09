@@ -10,17 +10,13 @@ import org.junit.jupiter.api.Test
 /**
  * The step between a pin lookup and the gate: `PinnedCloseGate.canClose(pinned)`.
  *
- * Both callers of the gate go through this extension rather than building the
- * argument lists themselves, so it is the one place that decides what a user is
- * shown when a close is refused — and getting the name mapping wrong shows them a
- * dialog naming files they do not recognise.
+ * Both callers of the gate go through this extension, so it is the one place that
+ * decides which file names a user sees when a close is refused.
  *
- * The other half of the extension — merging `pinnedIn` across files — is
- * deliberately not asserted here. It feeds the INFO line in [PinnedCloseGate] and
- * nothing else, and the gate exposes no way to observe it that would not amount to
+ * The other half of it — merging `pinnedIn` across files — is deliberately not
+ * asserted here: it feeds nothing but an INFO line, and observing it would mean
  * asserting against a log format. [PlatformPinnedFilesTest] covers where those
- * labels come from in the first place, which is the part that can actually be
- * wrong.
+ * labels come from in the first place.
  */
 internal class PinnedFileSelectorTest {
 

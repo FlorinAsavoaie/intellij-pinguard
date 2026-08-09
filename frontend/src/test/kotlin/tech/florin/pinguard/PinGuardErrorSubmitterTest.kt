@@ -68,8 +68,7 @@ class PinGuardErrorSubmitterTest {
      * An event with a short, fixed trace.
      *
      * The stack a test throwable picks up by itself is the whole JUnit runner, deep
-     * enough to overrun the URL budget on its own — so a report built from one would
-     * be truncated for a reason that has nothing to do with what is being asserted.
+     * enough to overrun the URL budget on its own.
      */
     private fun event(
         message: String = "boom",
@@ -163,8 +162,8 @@ class PinGuardErrorSubmitterTest {
 
     @Test
     fun `the button and the privacy notice are resolved from the bundle`() {
-        // A key that is missing from the properties file resolves to "!key!" rather
-        // than failing, so nothing but an assertion catches the typo.
+        // A missing key resolves to "!key!" rather than failing, so nothing but an
+        // assertion catches the typo.
         val submitter = submitter(RecordingDelivery())
 
         assertEquals("Report on GitHub", submitter.getReportActionText())
@@ -208,8 +207,6 @@ class PinGuardErrorSubmitterTest {
 
     @Test
     fun `every event the dialog groups together reaches the issue, not just the first`() {
-        // Reporting only events[0] silently drops the rest while telling the
-        // consumer the whole batch was filed.
         val delivery = RecordingDelivery()
         val second = event("second", IllegalArgumentException("the second failure"))
 

@@ -35,15 +35,13 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 
 /**
- * A real project with a real [FileEditorManagerImpl], for the tests that cannot
- * be written against fakes.
+ * A real project with a real [FileEditorManagerImpl], for the tests that cannot be
+ * written against fakes.
  *
  * The headless test environment installs [com.intellij.openapi.fileEditor.impl.TestEditorManagerImpl],
- * whose `getWindows()` is hardcoded to return an empty array — so every pin
- * lookup through it reports nothing pinned and a test built on it would pass
- * without exercising anything. Swapping in the production implementation, the
- * way the platform's own `FileEditorManagerTestCase` does, is what makes
- * [PlatformPinnedFiles] and the guarded close actions testable at all.
+ * whose `getWindows()` is hardcoded to return an empty array — so every pin lookup
+ * through it reports nothing pinned and a test built on it would pass without
+ * exercising anything.
  */
 @TestApplication
 @TestFixtures
@@ -77,19 +75,19 @@ internal abstract class RealEditorTestCase {
      * the run in [com.intellij.testFramework.LeakHunter] rather than in the test,
      * which is a considerably harder thing to read.
      *
-     * The settings reset is here for a different reason: [PinGuardSettings] is an
-     * application service, so it is one object shared by every test in the JVM, and
-     * a test that leaves it switched off silently disarms the next one.
+     * [PinGuardSettings] is reset for a different reason: it is an application
+     * service shared by every test in the JVM, so one that leaves it switched off
+     * silently disarms the next.
      */
     @AfterEach
     fun closeEverything() {
         runInEdtAndWait {
             // Every window explicitly, not just closeAllFiles: a file open in two
-            // splits keeps its composite alive until the last window lets go, and
-            // the fixture then deletes the file out from under it.
+            // splits keeps its composite alive until the last window lets go, and the
+            // fixture then deletes the file out from under it.
             //
-            // The list is copied before iterating because closing writes back into
-            // it — the same hazard the platform's own CloseAllEditorsAction has.
+            // The list is copied before iterating because closing writes back into it
+            // — the same hazard the platform's own CloseAllEditorsAction has.
             manager.windows.forEach { window ->
                 window.fileList.toList().forEach { window.closeFile(it) }
             }
@@ -104,51 +102,39 @@ internal abstract class RealEditorTestCase {
             Disposer.dispose(serviceDisposable)
         }
 
-        // Off the EDT, and joining rather than only asking: `cancel()` *requests*
-        // cancellation and returns, so on its own it leaves this test's coroutines
-        // still running — and every one of them carries the project in its context.
-        // Joining is what makes "cancelled" mean "finished". Bounded, because a
-        // coroutine that never completes should fail this test rather than hang the
-        // build with no indication of which test stopped.
+        // Joining rather than only asking: `cancel()` requests cancellation and
+        // returns, leaving this test's coroutines running with the project in their
+        // context. Bounded, so a coroutine that never completes fails this test
+        // rather than hanging the build with no indication of which test stopped.
         runBlocking {
             withTimeoutOrNull(30.seconds) { scope.coroutineContext.job.cancelAndJoin() }
                 ?: error("the test scope did not finish cancelling; something is still holding the project")
         }
 
-        // Separately, and after the disposal has returned: closing an editor and
-        // cancelling a scope both queue work with invokeLater, and a runnable still
-        // sitting in the queue holds the project through its coroutine context.
-        // Draining from inside the block above is too early — the work being waited
-        // on has not been queued yet.
+        // After the disposal has returned, not inside it: closing an editor and
+        // cancelling a scope both queue work with invokeLater, and draining any
+        // earlier is draining before that work has been queued.
         drainTheEventQueue()
 
         PinGuardSettings.getInstance().config = PinGuardState()
     }
 
     /**
-     * Runs everything queued on the EDT, and whatever that queues in turn, so
-     * that nothing outlives the test.
-     *
-     * Waiting comes before draining, rather than the drain being repeated on its
-     * own. The runnables that keep a disposed project alive are queued onto the EDT
-     * *by* background tasks, so a drain that runs while one of those is still going
-     * only empties the queue in front of the next enqueue — which is how a fixed
-     * number of drains comes to pass or fail depending on timing. Left as three
-     * drains alone this leaked a `ProjectImpl` on roughly two runs in three.
+     * Runs everything queued on the EDT, and whatever that queues in turn, so that
+     * nothing outlives the test.
      */
     protected fun drainTheEventQueue() {
-        // Once, and first. Off the EDT, because it waits on the other threads
-        // rather than on this one, and it is what covers the work the queue drain
-        // cannot reach: the runnable that strands a project is queued by a
-        // background task needing the write-intent lock, which a plain drain leaves
-        // where it is. It is also by far the most expensive thing in this teardown,
-        // so it runs once and the cheap drains do the repeating.
+        // First, and off the EDT: the runnables that strand a project are queued onto
+        // the EDT *by* background tasks needing the write-intent lock, so a drain that
+        // runs while one is still going only empties the queue in front of the next
+        // enqueue. Left as drains alone this leaked a `ProjectImpl` two runs in three.
+        // It is also the most expensive thing here, so the cheap drains do the
+        // repeating.
         PlatformTestUtil.waitForAllBackgroundActivityToCalmDown()
 
         repeat(3) {
-            // Both on the EDT: waitForAsyncTaskCompletion asserts it is there,
-            // because pumping the queue while it waits is how it lets the tasks it
-            // is waiting for finish.
+            // Both on the EDT: waitForAsyncTaskCompletion asserts it is there, because
+            // pumping the queue while it waits is how it lets those tasks finish.
             runInEdtAndWait {
                 NonBlockingReadActionImpl.waitForAsyncTaskCompletion()
                 PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue()
@@ -190,11 +176,10 @@ internal abstract class RealEditorTestCase {
      * Opens [name] in [window] and nowhere else, which is how a file comes to be
      * absent from one split.
      *
-     * Reaching the same state by opening everywhere and closing again does not
-     * work: each split holds its own
-     * [com.intellij.openapi.fileEditor.impl.EditorComposite], and closing one while
-     * another window still shows the file leaves that composite undisposed and the
-     * project reachable from it.
+     * Opening everywhere and closing again does not reach the same state: each split
+     * holds its own [com.intellij.openapi.fileEditor.impl.EditorComposite], and
+     * closing one while another window still shows the file leaves that composite
+     * undisposed and the project reachable from it.
      */
     protected fun openIn(window: EditorWindow, name: String): VirtualFile = file(name).also { file ->
         runInEdtAndWait { manager.openFile(file, window, FileEditorOpenOptions()) }

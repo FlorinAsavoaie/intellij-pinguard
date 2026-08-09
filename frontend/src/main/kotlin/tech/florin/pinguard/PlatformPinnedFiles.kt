@@ -18,12 +18,12 @@ internal object PlatformPinnedFiles {
 
     fun selector(): PinnedFileSelector = PinnedFileSelector { targets ->
         if (targets.isEmpty()) {
-            // Short-circuited before touching the IDE at all: a close with nothing
-            // in it must not walk every project's editor windows.
+            // Short-circuited before touching the IDE: a close with nothing in it
+            // must not walk every project's editor windows.
             emptyList()
         } else {
-            // Once per close rather than once per target: a "Close All" would
-            // otherwise repeat the same walk for every tab in it.
+            // Once per close rather than once per target, or a "Close All" repeats
+            // the same walk for every tab in it.
             val everyWindow = everyOpenWindow()
 
             targets.mapNotNull { target ->
@@ -37,22 +37,14 @@ internal object PlatformPinnedFiles {
      * Where [target] is pinned in a way that this particular close would disturb.
      *
      * A target naming a window is closing that split's tab and nothing else, so
-     * only that window has a say: the same file pinned in another split, or in
-     * another project, was never in this close's way, and refusing on account of it
-     * is a close that silently does nothing. A target with no window closes the
-     * file across every split, so there every window gets a say and the strictest
-     * of them wins.
-     *
-     * The aimed-at window is picked out of the already-labelled set by identity
-     * rather than asked which project it belongs to: `EditorWindow.getManager()` is
-     * `@ApiStatus.Internal`, and its project is wanted only for the log line. A
-     * window that belongs to no open project — one disposed mid-close — matches
-     * nothing and reads as "not pinned", which is the same fail-open answer every
-     * other lookup here gives.
+     * only that window has a say. A target with no window closes the file across
+     * every split, so every window gets a say and the strictest of them wins.
      */
     private fun pinnedIn(target: CloseTarget, everyWindow: List<Window>): List<String> {
-        // An EditorWindow belongs to exactly one project's manager, so the
-        // aimed-at case matches at most once.
+        // Matched by identity rather than by asking the window for its project:
+        // `EditorWindow.getManager()` is `@ApiStatus.Internal`, and the project is
+        // wanted only for the log line. A window belonging to no open project — one
+        // disposed mid-close — matches nothing and reads as "not pinned".
         val windows = target.window
             ?.let { aimedAt -> listOfNotNull(everyWindow.firstOrNull { it.window === aimedAt }) }
             ?: everyWindow
@@ -64,10 +56,10 @@ internal object PlatformPinnedFiles {
     }
 
     /**
-     * One entry per open editor window, across every open project.
+     * One entry per open editor window, across every open project, each labelled
+     * with the project it belongs to.
      *
-     * A close can reach us without any project context, so we consult them all.
-     * Each carries its project's name so the log can say which window vetoed.
+     * Every project, because a close can reach us with no project context at all.
      */
     private fun everyOpenWindow(): List<Window> =
         ProjectManager.getInstance().openProjects
@@ -77,10 +69,9 @@ internal object PlatformPinnedFiles {
     /**
      * The editor windows of one project, or none if it went away while we asked.
      *
-     * Scoped to one project on purpose: a project disposed between the
-     * [Project.isDisposed] test above and the service lookup here throws, and that
-     * must not unprotect the pins of every *other* open project — which is exactly
-     * the situation PinGuard exists for.
+     * Scoped to one project so that a project disposed between the
+     * [Project.isDisposed] test above and the service lookup here cannot unprotect
+     * the pins of every *other* open project.
      */
     private fun windowsOf(project: Project): List<Window> =
         try {

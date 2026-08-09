@@ -27,9 +27,8 @@ dependencyResolutionManagement {
     }
 }
 
-// Everything PinGuard does happens where the editor tabs are, which in a remote
-// development or Code With Me session is the frontend process rather than the
-// backend the plugin is installed on. Keeping the code in a content module that
-// depends on `intellij.platform.frontend` is what gets it loaded there; see
-// src/main/resources/META-INF/plugin.xml.
+// A content module depending on `intellij.platform.frontend`, which is what gets
+// PinGuard loaded where the editor tabs are — in a remote development or Code With
+// Me session, the frontend process rather than the backend the plugin is installed
+// on. See src/main/resources/META-INF/plugin.xml.
 include("frontend")

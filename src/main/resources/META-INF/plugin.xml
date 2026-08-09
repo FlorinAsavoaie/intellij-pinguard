@@ -38,27 +38,11 @@
       Client in a remote development session, never the backend the plugin is
       installed on.
 
-      The default `optional` loading, and not `required`. `required` reads like the
-      stricter, safer choice — a plugin installed, enabled and doing nothing is the
-      failure this layout exists to rule out, so why not fail loudly instead? Because
-      on a remote development backend, installed and doing nothing *is* the correct
-      state: that half of the split owns no editor tabs, which is the entire reason
-      the module asks for the frontend. `required` cannot tell "wrong IDE, this can
-      never load" from "right setup, wrong half of the pair", so it fails the case
-      the plugin exists to serve. Under it, `runIdeSplitMode` logs
-
-          Plugin 'PinGuard' (tech.florin.pinguard) has dependency on
-          'intellij.platform.frontend' which is not installed
-
-      and the backend refuses PinGuard outright — while the platform disables its own
-      `intellij.platform.monolith` on the same line above it, without complaint.
-
-      The silent-skip this gives up on cannot happen in a monolithic IDE, where
-      `intellij.platform.frontend` always resolves. What it protects against there is
-      a broken module jar name, and `PluginDescriptorTest` already asserts that.
-
-      Every bundled JetBrains plugin with a frontend module is packaged this way;
-      `intellij.editorconfig.frontend` is the one to compare against.
+      The module loads with the default `optional`, not `required`. On a remote
+      development backend, installed and doing nothing is the correct state, and
+      `required` cannot tell that apart from "wrong IDE, this can never load": under
+      it the backend refuses PinGuard outright. `PluginDescriptorTest` covers the
+      misnamed-jar case that `required` would otherwise catch.
     -->
     <content>
         <module name="tech.florin.pinguard.frontend"/>

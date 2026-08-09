@@ -12,11 +12,9 @@ import org.junit.jupiter.api.Test
 /**
  * The settings object and the XML the platform actually writes for it.
  *
- * Handing the object returned by `getState()` straight back to `loadState()`
- * proves nothing about persistence: no serializer runs, so it passes whatever
- * `@State` and `@Storage` happen to say. Everything below the first two tests
- * goes through the platform's own serializer instead — which needs no
- * application, so this stays in the fast suite.
+ * Handing the object returned by `getState()` straight back to `loadState()` proves
+ * nothing about persistence, since no serializer runs. Everything below the first
+ * two tests goes through the platform's own serializer, which needs no application.
  */
 class PinGuardSettingsTest {
 
@@ -36,19 +34,14 @@ class PinGuardSettingsTest {
 
     @Test
     fun `the shipped default is to guard silently rather than prompt`() {
-        // Spelled out rather than left to `PinGuardState()`: these two values are a
-        // product decision, and the test above would still pass if both were
-        // flipped. See the serializer test below for why changing them reaches every
-        // existing install, not just new ones.
+        // Spelled out rather than left to `PinGuardState()`, which the test above
+        // would still pass with both values flipped.
         assertEquals(true, PinGuardState().enabled)
         assertEquals(false, PinGuardState().confirmInsteadOfBlock)
     }
 
     @Test
     fun `the stored state cannot be changed by whoever last read it`() {
-        // PinGuardState is mutable because the serializer needs it to be, so a
-        // caller that kept the object it read could otherwise reconfigure every open
-        // project through it.
         val settings = PinGuardSettings()
         val read = settings.config
 
@@ -84,12 +77,10 @@ class PinGuardSettingsTest {
 
     @Test
     fun `choosing today's default writes a file indistinguishable from never having chosen`() {
-        // The store omits any value equal to a freshly constructed state, so a user
-        // who deliberately ticked the current default and a user who never opened
-        // the settings end up with byte-identical files. PinGuardState() is
-        // therefore not merely the starting point for new installs: it is re-applied
-        // to every existing install on each load, and changing it silently reverses
-        // the settings of everyone who is on it.
+        // The store omits any value equal to a freshly constructed state, so
+        // PinGuardState() is re-applied to every existing install on each load rather
+        // than only starting off new ones: changing it silently reverses the settings
+        // of everyone who is on it.
         val chose = persist(PinGuardState())
         val neverOpenedTheSettings = Element("PinGuardState")
 

@@ -10,17 +10,14 @@ import org.junit.jupiter.api.Test
 /**
  * The bridge from [PinnedFileSelector] to the running IDE.
  *
- * Two things here can only be answered by a real editor: that a pin really is a
- * property of one split rather than of the file, and that
- * `EditorWindow.isFilePinned` really does throw for a file the window does not
- * hold — an undocumented behaviour that the `isFileOpen(file) &&` guard in
- * [PlatformPinnedFiles] exists solely to work around. What the selector's answer
- * becomes once the gate has it is [PinnedFileSelectorTest]'s job.
+ * Two things here can only be answered by a real editor: that a pin is a property
+ * of one split rather than of the file, and that `EditorWindow.isFilePinned` throws
+ * for a file the window does not hold. What the selector's answer becomes once the
+ * gate has it is [PinnedFileSelectorTest]'s job.
  *
- * Not covered, and deliberately so: the `getInstanceExIfCreated` null branch, for a
- * project whose editors have never been touched. This fixture installs an editor
- * manager into its project by hand, so it cannot produce that state, and a test
- * that merely asserts the branch was not taken proves nothing about it.
+ * Deliberately not covered: the `getInstanceExIfCreated` null branch, for a project
+ * whose editors have never been touched. This fixture installs an editor manager by
+ * hand, so it cannot produce that state.
  */
 internal class PlatformPinnedFilesTest : RealEditorTestCase() {
 
@@ -55,9 +52,8 @@ internal class PlatformPinnedFilesTest : RealEditorTestCase() {
 
     @Test
     fun `isFilePinned still throws for a file the window does not hold`() {
-        // The whole reason PlatformPinnedFiles checks openness first. The day it
-        // stops throwing, that guard becomes dead code and this test is the only
-        // thing that will say so.
+        // The whole reason PlatformPinnedFiles checks openness first. The day it stops
+        // throwing, that guard becomes dead code and only this will say so.
         val (windows, absent) = splitWithFileInFirstWindowOnly()
 
         val thrown = runCatching { runInEdtAndGetValue { windows[1].isFilePinned(absent) } }.exceptionOrNull()
@@ -99,8 +95,6 @@ internal class PlatformPinnedFilesTest : RealEditorTestCase() {
 
     @Test
     fun `a close aimed at one split ignores a pin held only by the other`() {
-        // Counting a pin the close leaves alone anyway is what turns Cmd+W into a
-        // keystroke that silently does nothing.
         val file = open("Main.kt")
         val windows = split()
         val holders = windows.filter { runInEdtAndGetValue { it.isFileOpen(file) } }
@@ -130,8 +124,6 @@ internal class PlatformPinnedFilesTest : RealEditorTestCase() {
 
     @Test
     fun `a close naming no window is vetoed by a pin in any split`() {
-        // With no window the file closes everywhere, so every pin really is in the
-        // way.
         val file = open("Main.kt")
         val windows = split()
         val holders = windows.filter { runInEdtAndGetValue { it.isFileOpen(file) } }

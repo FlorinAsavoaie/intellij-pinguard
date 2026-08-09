@@ -22,30 +22,23 @@ plugins {
 
 group = providers.gradleProperty("pluginGroup").get()
 
-// The version a release ships under is not written down anywhere in this
-// repository. A release is a git tag and the GitHub release built from it, and
-// release.yml passes that tag's version in through PLUGIN_VERSION;
-// `-PpluginVersion=` says the same thing to a local build that needs a real
-// version, which is what the first manual upload to Marketplace needs. Everything
-// else — every development build, every pull request — is the placeholder.
+// A release is a git tag and the GitHub release built from it; release.yml passes
+// that tag's version in through PLUGIN_VERSION, and `-PpluginVersion=` says the same
+// to a local build. Everything else is the placeholder.
 //
-// It is `0.0.0` rather than a SNAPSHOT or a `-dev` suffix because the pre-release
-// identifier of the version in hand is what picks the Marketplace channel below,
-// and a placeholder that carries one would be asking for a channel named after it.
+// `0.0.0` rather than a SNAPSHOT or `-dev` suffix, because a pre-release identifier
+// is what picks the Marketplace channel below.
 val placeholderVersion = "0.0.0"
 
-// One rule for what a version may look like, for everything that has an opinion
-// about it: the channel below, the task that cuts a draft release, and release.yml's
-// check on the tag. release.yml keeps a copy of this in bash because it runs before
-// Gradle does, and the two are meant to say the same thing.
+// One rule for the channel below, the draft-release task, and release.yml's check on
+// the tag. release.yml keeps a copy in bash because it runs before Gradle does.
 val versionFormat = Regex("""\d{1,9}\.\d{1,9}\.\d{1,9}(-(alpha|beta|eap|rc)(\.\d{1,9})?)?""")
 
-// `orElse` supplies a value that is *absent*, not one that is present and empty, and
-// `-PpluginVersion=` with nothing after it is the second of those — an unset shell
-// variable expanded into a release command. Blanks are filtered out so they fall
-// through to the placeholder instead of becoming a version in their own right, which
-// publishes as no `<version>` element at all, to the stable channel, past both of the
-// guards at the bottom of this file.
+// Blanks are filtered out rather than left to `orElse`, which only supplies a value
+// that is *absent*: `-PpluginVersion=` with nothing after it is present and empty —
+// an unset shell variable expanded into a release command — and would otherwise
+// publish as no `<version>` element at all, to the stable channel, past both guards
+// at the bottom of this file.
 val pluginVersion = providers.gradleProperty("pluginVersion").filter(String::isNotBlank)
     .orElse(providers.environmentVariable("PLUGIN_VERSION").filter(String::isNotBlank))
     .orElse(placeholderVersion)
@@ -65,10 +58,8 @@ version = pluginVersion.get()
 val releaseNotesFile = layout.buildDirectory.file("release-notes.md")
 
 // Marketplace creates a channel the first time an upload names one, so a mistyped
-// pre-release identifier would not fail: it would quietly open a channel nobody is
-// subscribed to and the release would never be seen again. What prevents that is
-// `versionFormat` above, which admits only the four identifiers this project uses —
-// so by the time a version reaches here, its channel is whichever of them it carries.
+// identifier would not fail — it would quietly open a channel nobody is subscribed
+// to. `versionFormat` above is what prevents that, by admitting only four.
 fun channelFor(version: String): String =
     version.substringAfter('-', "").substringBefore('.').ifEmpty { "default" }
 
@@ -91,17 +82,15 @@ allprojects {
                 extraWarnings.set(true)
                 freeCompilerArgs.add("-Xjsr305=strict")
 
-                // Pinned to the Kotlin the oldest supported platform bundles —
-                // 2.2.20 on the 253 floor — because `kotlin.stdlib.default.dependency
-                // = false` means this plugin runs on the IDE's stdlib rather than
-                // one of its own. Compiling against a newer API, or emitting newer
-                // metadata than the IDE's kotlin-reflect can read, is only
-                // discoverable at runtime on the oldest IDE anyone runs it on.
+                // Pinned to the Kotlin the oldest supported platform bundles — 2.2.20
+                // on the 253 floor — because `kotlin.stdlib.default.dependency =
+                // false` runs this plugin on the IDE's stdlib rather than its own.
+                // Compiling against a newer API, or emitting metadata the IDE's
+                // kotlin-reflect cannot read, only shows up at runtime on the oldest
+                // IDE anyone runs it on.
                 //
-                // `progressiveMode` is deliberately absent: it opts into the
-                // *latest* language semantics, which is precisely what pinning
-                // languageVersion rules out, and the compiler rejects the
-                // combination outright.
+                // `progressiveMode` is absent because it opts into the *latest*
+                // language semantics, and the compiler rejects the combination.
                 apiVersion.set(KotlinVersion.KOTLIN_2_2)
                 languageVersion.set(KotlinVersion.KOTLIN_2_2)
             }
@@ -129,22 +118,16 @@ intellijPlatform {
         // top of this file.
 
         // The change notes users read in the IDE are the body of the GitHub release,
-        // written once where it is published rather than kept in step with a second
-        // copy in the repository. release.yml drops that body into this file before
-        // it builds anything; a build with no file is a development build and says
-        // so, and the check on `patchPluginXml` at the bottom of this file is what
-        // stops a real release from quietly shipping that same placeholder.
+        // which release.yml drops into this file before it builds anything. A build
+        // with no file is a development build; the check on `patchPluginXml` at the
+        // bottom of this file stops a real release from shipping that placeholder.
         //
-        // The rendered HTML goes into the descriptor inside a CDATA section, which
-        // `]]>` would close early and leave the descriptor malformed. Markdown prose
-        // cannot produce that sequence — it escapes `>` — but raw HTML in the body is
-        // passed through verbatim, so the one sequence that matters is neutralised
-        // here rather than left to whoever writes the release.
+        // The rendered HTML lands inside a CDATA section, which `]]>` would close
+        // early. Markdown prose cannot produce that sequence, but raw HTML in the
+        // release body passes through verbatim.
         //
-        // Marketplace documents change-notes as accepting "simple HTML elements" —
-        // headings, paragraphs, lists, links, emphasis, inline code. Markdown that
-        // renders to a table, an image or a <details> block is outside what is
-        // documented, so release bodies stay within the simple set.
+        // Marketplace documents change-notes as accepting only "simple HTML
+        // elements", so release bodies stay clear of tables, images and <details>.
         changeNotes = providers.fileContents(releaseNotesFile).asText
             .map(String::trim)
             .filter(String::isNotEmpty)
@@ -158,58 +141,45 @@ intellijPlatform {
     }
 
     publishing {
-        // The channel is the version's pre-release identifier: 0.2.0 has none and
-        // goes to `default`, the stable repository every Marketplace user sees, while
-        // 0.2.0-beta.1 goes to a `beta` channel only the people who added its URL to
-        // their plugin repositories receive. Derived rather than written down because
-        // the default is `default` either way, so a hardcoded channel has to be
-        // edited in step with every release and pre-release in turn, and the one time
-        // that is forgotten a beta ships to everyone.
+        // The channel is the version's pre-release identifier: 0.2.0 goes to
+        // `default`, the stable repository every Marketplace user sees, while
+        // 0.2.0-beta.1 goes to a `beta` channel only subscribers receive. Derived
+        // rather than hardcoded, which would have to be edited in step with every
+        // release in turn — and the once that is forgotten, a beta ships to everyone.
         //
         // No `token` here on purpose: it already defaults to the PUBLISH_TOKEN
         // environment variable, which is how release.yml supplies it.
         channels = pluginVersion.map { listOf(channelFor(it)) }
     }
 
-    // Off, reluctantly, and not because PinGuard has nothing to index — its
-    // settings page is exactly what this task exists for. The 2025.3 distribution
-    // the unified `idea` artifact resolves to ships several bundled plugins as
-    // empty directories (station-plugin, webp and others have a lib/ with no
-    // jars), so the headless IDE this task starts logs SEVERE for every extension
-    // it then cannot instantiate and exits non-zero before it reaches us. Nothing
-    // here is PinGuard's: the plugin itself loads clean in that same run. Worth
-    // turning back on when the distribution is whole again.
+    // Off because the 2025.3 distribution the unified `idea` artifact resolves to
+    // ships several bundled plugins as empty directories (station-plugin, webp and
+    // others have a lib/ with no jars), so the headless IDE this task starts logs
+    // SEVERE for every extension it cannot instantiate and exits non-zero before it
+    // reaches us. PinGuard itself loads clean in that same run. Worth turning back
+    // on when the distribution is whole again.
     buildSearchableOptions = false
 
     // Split mode is deliberately *not* configured here. `splitMode` and
-    // `pluginInstallationTarget` on this extension are conventions for every
-    // SplitModeAware task, `runIde` and the test sandboxes included — setting them
-    // turns plain `./gradlew runIde` into a backend plus a JetBrains Client, which
-    // is not what anyone typing it expects and not what CONTRIBUTING.md documents.
-    //
-    // `runIdeSplitMode` needs none of it: its own registration forces split mode
-    // and wires a backend and a frontend sandbox with the right installation
-    // target on each side. It remains the way to see the frontend module load
-    // where it matters.
+    // `pluginInstallationTarget` are conventions for every SplitModeAware task,
+    // `runIde` and the test sandboxes included, so setting them would turn plain
+    // `./gradlew runIde` into a backend plus a JetBrains Client. `runIdeSplitMode`
+    // forces split mode through its own registration and needs none of it.
 
     pluginVerification {
         ides {
-            // The verified set is derived from the declared compatibility range
-            // rather than written out build by build. `untilBuild` is null, so
-            // Marketplace offers the plugin to every IDE from the 253 floor
-            // onwards, and a hand-written pair of versions silently stops
-            // covering that range the moment the next major ships — which, for a
-            // plugin built on `@ApiStatus.Experimental` platform APIs, is exactly
-            // the release that would have broken it. `select` resolves the range
-            // afresh on every run instead.
+            // Derived from the declared compatibility range rather than written out
+            // build by build. `untilBuild` is null, so Marketplace offers the plugin
+            // to every IDE from the 253 floor onwards, and a hand-written pair of
+            // versions stops covering that range the moment the next major ships —
+            // which, for a plugin built on `@ApiStatus.Experimental` APIs, is exactly
+            // the release that would have broken it.
             //
-            // RELEASE only, and not the RELEASE + EAP + RC that `recommended()`
-            // defaults to: the pre-release channels resolve to builds that are
-            // superseded and withdrawn as a major stabilises, so they can fail a
-            // release for reasons that are none of this plugin's doing. The type
-            // stays IntelliJ IDEA because that is precisely the compatibility
-            // README.md claims has been measured; the other IDEs are a separate
-            // promise, and making it is a separate decision.
+            // RELEASE only, not the RELEASE + EAP + RC of `recommended()`: the
+            // pre-release channels resolve to builds that are superseded and
+            // withdrawn as a major stabilises, so they fail releases for reasons that
+            // are none of this plugin's doing. IntelliJ IDEA only, because that is
+            // the compatibility README.md claims has been measured.
             select {
                 channels = listOf(ProductRelease.Channel.RELEASE)
                 types = listOf(IntelliJPlatformType.IntellijIdea)
@@ -219,12 +189,11 @@ intellijPlatform {
 }
 
 // A version was asked for, so this is a release, so it needs notes: the fallback
-// text that keeps development builds working is exactly what must never reach
-// Marketplace. Checked on `patchPluginXml`, the task that renders the descriptor,
-// which means it is also reached by `test` — the frontend module's test classpath
-// takes the patched descriptor — so a bare `./gradlew test -PpluginVersion=1.2.3`
-// fails here too. That is the same demand made in a less obvious place, not a
-// separate rule.
+// text that keeps development builds working must never reach Marketplace.
+//
+// On `patchPluginXml` rather than on `publishPlugin` so it fires early — which also
+// means `./gradlew test -PpluginVersion=1.2.3` fails here, the frontend module's
+// test classpath taking the patched descriptor.
 tasks.named("patchPluginXml") {
     val notes = releaseNotesFile
     val versionInHand = version.toString()
@@ -241,18 +210,14 @@ tasks.named("patchPluginXml") {
 }
 
 // Marketplace takes the placeholder without complaint and then never shows it:
-// SemVer ordering is on for new plugins, so `0.0.0` is accepted, sorted below every
-// real release and left off the plugin page. The upload cannot be taken back, only
-// hidden, so the only useful place to notice is before it leaves.
+// SemVer ordering sorts `0.0.0` below every real release and off the plugin page. An
+// upload cannot be taken back, only hidden, so the only useful place to notice is
+// before it leaves.
 //
-// The second check is about which archive is going: `publishPlugin` picks the signed
-// one only when `signPlugin` *executed* in this same invocation, because it reads
-// that task's `didWork`. Run `./gradlew signPlugin` in one command and
-// `./gradlew publishPlugin` in the next and the second sees an up-to-date signing
-// task, concludes nothing was signed, and uploads the unsigned archive — silently,
-// and to a place it cannot be recalled from. Asserting on the name of the file about
-// to be uploaded turns that into a failure before the upload rather than a discovery
-// afterwards.
+// The second check is about which archive goes: `publishPlugin` picks the signed one
+// only when `signPlugin` *executed* in this same invocation, since it reads that
+// task's `didWork`. Signing in one command and publishing in the next uploads the
+// unsigned archive, silently.
 tasks.named<PublishPluginTask>("publishPlugin") {
     val versionToPublish = version.toString()
     val placeholder = placeholderVersion
@@ -271,12 +236,10 @@ tasks.named<PublishPluginTask>("publishPlugin") {
     }
 }
 
-// Cutting a release is one `gh` call. What is worth a task is everything that has
-// to be true before it: this is the last point at which a mistake costs nothing,
-// because until the draft is published there is no tag, no Marketplace upload and
-// nothing to retract. Publishing the draft is left to a person, in the browser,
-// where the notes are written — and a release published by a token rather than a
-// person would start no workflow at all.
+// Checks everything that has to be true before a release, then cuts the draft.
+// Until the draft is published there is no tag, no Marketplace upload and nothing to
+// retract, so this is the last point at which a mistake costs nothing. Publishing is
+// left to a person: a release published by a token starts no workflow at all.
 abstract class ReleaseDraftTask : DefaultTask() {
 
     @get:Input
@@ -312,9 +275,8 @@ abstract class ReleaseDraftTask : DefaultTask() {
         }
         checkSucceeds("git", "remote", "get-url", "origin") { "This repository has no 'origin' remote." }
 
-        // Pruned, because a stale `refs/remotes/origin/<branch>` left behind by a
-        // branch deleted at origin — which is what GitHub does to a merged branch by
-        // default — would otherwise vouch for a commit origin no longer references.
+        // Pruned, or a stale `refs/remotes/origin/<branch>` left behind by a branch
+        // deleted at origin would vouch for a commit origin no longer references.
         checkSucceeds("git", "fetch", "--prune", "origin", "--tags", "--quiet") { "Could not fetch from origin." }
 
         val head = git("rev-parse", "HEAD")
@@ -340,9 +302,7 @@ abstract class ReleaseDraftTask : DefaultTask() {
                 "version and shows the newest, so an older one uploads and is never seen."
         }
 
-        // `--prerelease` so GitHub's own label agrees with the channel the version
-        // picks: a version carrying an identifier goes to that channel and reaches
-        // only the people subscribed to it, which is what a pre-release means.
+        // So GitHub's own label agrees with the Marketplace channel the version picks.
         val preRelease = if (version.contains("-")) listOf("--prerelease") else emptyList()
         checkSucceeds(
             *(listOf("gh", "release", "create", tag, "--draft", "--target", head, "--title", tag, "--generate-notes") + preRelease)
@@ -367,9 +327,7 @@ abstract class ReleaseDraftTask : DefaultTask() {
     }
 
     // A command that cannot be started at all throws out of `exec` rather than
-    // returning a status, and a Gradle daemon started before a tool was installed
-    // keeps the PATH it was started with — so "not on PATH" here can mean "run
-    // ./gradlew --stop and try again" rather than anything being missing.
+    // returning a status, hence [NOT_STARTED].
     private fun run(vararg command: String): Pair<Int, String> {
         val output = ByteArrayOutputStream()
         val diagnostics = ByteArrayOutputStream()
@@ -381,8 +339,8 @@ abstract class ReleaseDraftTask : DefaultTask() {
                 errorOutput = diagnostics
                 isIgnoreExitValue = true
             }
-            // Only stdout is the value. git writes advice and warnings to stderr, and
-            // a caller parsing a commit SHA out of a merged stream would take them
+            // Only stdout is the value: git writes advice and warnings to stderr, and
+            // a caller parsing a commit SHA out of a merged stream would take those
             // for part of the answer.
             val text = if (result.exitValue == 0) output.toString() else output.toString() + diagnostics
             result.exitValue to text.trim()
@@ -421,7 +379,7 @@ abstract class ReleaseDraftTask : DefaultTask() {
         }
 
         // Sorts the way SemVer orders a pre-release: below the release it leads to,
-        // and alphabetically among themselves, which happens to be the order the
+        // and alphabetically among themselves — which is the order the four
         // identifiers already read in.
         fun ordering(version: String): List<Int> {
             val (release, preRelease) = version.split("-", limit = 2).let { it[0] to it.getOrNull(1) }

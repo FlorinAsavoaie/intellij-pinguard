@@ -10,11 +10,10 @@ import org.junit.jupiter.api.Test
 /**
  * Reading the running IDE's own version details.
  *
- * Every call in [PlatformReportEnvironment] was chosen for existing on the declared
- * floor, and the Plugin Verifier checks that they still *resolve* there. What it
- * cannot check is that they return anything: a call that resolves and then throws
- * lands in the catch-all, and every bug report from that IDE arrives saying
- * "unknown".
+ * The Plugin Verifier checks that every call in [PlatformReportEnvironment] still
+ * *resolves* on the declared floor. What it cannot check is that they return
+ * anything: a call that resolves and then throws lands in the catch-all, and every
+ * bug report from that IDE arrives saying "unknown".
  */
 @TestApplication
 internal class PlatformReportEnvironmentTest {
@@ -39,8 +38,6 @@ internal class PlatformReportEnvironmentTest {
 
     @Test
     fun `each field a maintainer needs carries something`() {
-        // Named individually rather than as a set, because a single field silently
-        // going blank is exactly the failure this guards.
         assertTrue(described.ide.isNotBlank(), "ide")
         assertTrue(described.build.isNotBlank(), "build")
         assertTrue(described.os.isNotBlank(), "os")

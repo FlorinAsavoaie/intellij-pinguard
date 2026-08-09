@@ -11,18 +11,15 @@ import kotlin.test.assertTrue
 /**
  * The plugin's two XML descriptors, read off the classpath so no fixture is needed.
  *
- * They name every extension by fully qualified class name and every label by
- * bundle key, in strings no compiler checks: a rename that misses the XML builds
- * clean and ships a plugin whose extensions never load, and a mistyped key resolves
- * to `!key!` and ships a button labelled with its own key.
+ * They name every extension by fully qualified class name and every label by bundle
+ * key, in strings no compiler checks: a rename that misses the XML builds clean and
+ * ships a plugin whose extensions never load, and a mistyped key ships a button
+ * labelled `!key!`.
  *
  * The split between the two is the point. `META-INF/plugin.xml` carries the
  * plugin's identity and nothing else, while everything that does work is registered
- * in the content module, which the platform loads only where
- * `intellij.platform.frontend` resolves. Getting that wrong is silent — a module
- * whose descriptor cannot be found is simply never loaded — so the wiring between
- * the two files is asserted here rather than discovered in a remote development
- * session.
+ * in the content module. Getting that wrong is silent — a module whose descriptor
+ * cannot be found is simply never loaded.
  */
 class PluginDescriptorTest {
 
@@ -110,8 +107,6 @@ class PluginDescriptorTest {
 
     @Test
     fun `every bundle key the code asks for exists in the properties file`() {
-        // A missing key resolves to "!key!" rather than throwing, so nothing but an
-        // assertion catches the typo.
         val used = listOf(
             "confirm.title",
             "confirm.title.plural",
@@ -157,9 +152,8 @@ class PluginDescriptorTest {
 
     @Test
     fun `the module plugin dot xml names is the one whose descriptor is on the classpath`() {
-        // The platform resolves a content module by looking for a resource named
-        // after it, so renaming one file and not the other means the module is
-        // simply never found: no error, no extensions, a plugin that does nothing.
+        // Renaming one file and not the other means the module is never found: no
+        // error, no extensions, a plugin that does nothing.
         val declared = descriptor.getChild("content").getChildren("module").map { it.getAttributeValue("name") }
 
         assertEquals(listOf(moduleName), declared)
@@ -168,12 +162,10 @@ class PluginDescriptorTest {
     @Test
     fun `the module loads optionally rather than required`() {
         // `loading="required"` fails the whole plugin wherever the module's
-        // dependencies do not resolve, and on a remote development backend they
-        // never do — that is what asking for `intellij.platform.frontend` means.
-        // The backend then refuses PinGuard outright rather than loading it inert,
-        // and in a real session a plugin the host will not load is a plugin the
-        // client is never served. Absent is the assertion: the attribute is not
-        // written at all, and the platform's default is optional.
+        // dependencies do not resolve, and on a remote development backend they never
+        // do — the backend would refuse PinGuard outright, and a plugin the host will
+        // not load is one the client is never served. Absence is the assertion: the
+        // platform's default is optional.
         val module = descriptor.getChild("content").getChildren("module").single()
 
         assertNull(module.getAttributeValue("loading"), "the module is required again, which breaks split mode")
@@ -181,10 +173,8 @@ class PluginDescriptorTest {
 
     @Test
     fun `the module asks for the frontend, which is what decides where it loads`() {
-        // `intellij.platform.frontend` resolves in a monolithic IDE and in the
-        // JetBrains Client, and nowhere else. Losing this dependency would load the
-        // guards on a remote development backend, which dispatches none of the close
-        // actions they wrap.
+        // Losing this dependency would load the guards on a remote development
+        // backend, which dispatches none of the close actions they wrap.
         val dependencies = module.getChild("dependencies").getChildren("module").map { it.getAttributeValue("name") }
 
         assertTrue("intellij.platform.frontend" in dependencies, "the module no longer asks for the frontend")

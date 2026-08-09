@@ -10,10 +10,8 @@ import kotlin.test.assertTrue
  * What the guard does when it cannot reach a decision — the part no fixture can
  * produce: a lookup or a prompt that throws.
  *
- * The decisions themselves belong to [PinnedCloseGate], and asserting them again
- * through this two-line delegation only re-runs [PinnedCloseGateTest] with a fake
- * pin stapled on; the real thing, against a real pinned tab and the constructor
- * the platform actually calls, is [PinnedTabCloseGuardPlatformTest].
+ * The decisions themselves belong to [PinnedCloseGateTest]; the guard against a
+ * real pinned tab is [PinnedTabCloseGuardPlatformTest].
  */
 class PinnedTabCloseGuardTest {
 

@@ -13,9 +13,8 @@ internal data class CauseBlock(
  * Reads a stack trace as the structure it actually is, so that shortening one
  * keeps the part a maintainer needs.
  *
- * Cutting a trace off at the head loses the root cause, which in a wrapped
- * exception lives in the *last* block — so every block header survives every
- * quota, and frames are what gets spent.
+ * A wrapped exception keeps its root cause in the *last* block, so every block
+ * header survives every quota and frames are what gets spent.
  */
 internal object StackTraceDigest {
 
@@ -23,11 +22,6 @@ internal object StackTraceDigest {
      * No quota above this is honoured, which keeps [render]'s arithmetic in range:
      * the wrapper share multiplies the quota by [WRAPPER_PERCENT] before dividing,
      * and that product overflows for a large enough one.
-     *
-     * Not a defence against anything [GitHubIssueUrl] passes — its quotas are
-     * bounded by the URL budget long before this. It guards [render] as a callable
-     * function, which is how it is reached from tests and would be reached by any
-     * future caller that has not thought about the arithmetic.
      */
     private const val MAX_FRAMES = 10_000
 
@@ -40,9 +34,9 @@ internal object StackTraceDigest {
      * [trace] with its line separators reduced to `\n` and trailing blank lines
      * dropped.
      *
-     * `IdeaLoggingEvent.getThrowableText()` writes through a `PrintWriter`, so its
-     * separators are the platform's — `\r\n` on Windows, which would otherwise
-     * reach the issue as stray carriage returns.
+     * `IdeaLoggingEvent.getThrowableText()` writes through a `PrintWriter`, so on
+     * Windows its separators would otherwise reach the issue as stray carriage
+     * returns.
      */
     fun normalize(trace: String): String =
         trace.replace("\r\n", "\n").replace("\r", "\n").trimEnd()
@@ -104,9 +98,6 @@ internal object StackTraceDigest {
     /**
      * A markdown fence long enough that nothing in [trace] can break out of the
      * code block.
-     *
-     * A trace whose message embeds a markdown snippet otherwise ends the fence
-     * early and GitHub renders the rest of the report as prose.
      */
     fun fenceFor(trace: String): String {
         val longestRun = BACKTICK_RUN.findAll(trace).maxOfOrNull { it.value.length } ?: 0

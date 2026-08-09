@@ -17,12 +17,7 @@ private val LOG: Logger = Logger.getInstance(PinGuardErrorSubmitter::class.java)
 @NonNls
 private const val PLUGIN_ID = "tech.florin.pinguard"
 
-/**
- * How a prepared issue reaches the user.
- *
- * The one seam in this file, because the ordering — clipboard first, browser
- * second — has to be assertable without a desktop.
- */
+/** How a prepared issue reaches the user. */
 internal interface ReportDelivery {
     /** Puts the whole report on the clipboard, for the user to paste into the issue. */
     fun copyFullReport(text: String)
@@ -48,12 +43,11 @@ internal object PlatformReportDelivery : ReportDelivery {
     }
 
     /**
-     * Takes [url] as-is. Routing it through `java.net.URI` would re-encode every
-     * `%` as `%25` and hand GitHub a body of escape sequences.
+     * Opens [url], taken as-is — routing it through `java.net.URI` would re-encode
+     * every `%` as `%25` and hand GitHub a body of escape sequences.
      *
      * Reports nothing back: `BrowserUtil` turns a missing browser or a failed
-     * launch into a notification of its own and returns normally, so there is no
-     * success to check for here.
+     * launch into a notification of its own and returns normally.
      */
     override fun openIssueForm(url: String) {
         BrowserUtil.browse(url)
@@ -66,24 +60,11 @@ internal object PlatformReportDelivery : ReportDelivery {
  *
  * Nothing is transmitted from the IDE. The report is composed locally and opened
  * as a prefilled issue form in the user's browser, which they then read and submit
- * themselves — the same posture as the rest of the plugin, which keeps its
- * diagnostics in `idea.log` rather than sending them anywhere.
+ * themselves.
  *
- * Three details of the platform contract are load-bearing here:
- *
- * - **[submit] runs synchronously on the EDT.** That is tolerable only because
- *   nothing on this path blocks: `BrowserUtil.browse` hands the launch to a
- *   coroutine on the IO dispatcher, and everything else is bounded string work
- *   over at most a few kilobytes of output.
- * - **The consumer must be called exactly once, on every path.** Returning true
- *   without calling it leaves the platform's message marked as submitting forever,
- *   and the Report button stays greyed out for that error for the rest of the IDE
- *   session — so the failure path reports `FAILED` rather than returning early.
- * - **`NEW_ISSUE` means the flow reached GitHub, not that an issue exists.** The
- *   platform has no status for a hand-off; `FAILED` would grey the button out just
- *   the same while mislabelling a working report.
- *
- * `IdeaLoggingEvent.getData()` is left alone: it is a platform internal.
+ * [submit] runs synchronously on the EDT, which is tolerable only because nothing
+ * on this path blocks: `BrowserUtil.browse` hands the launch to a coroutine on the
+ * IO dispatcher, and everything else is bounded string work over a few kilobytes.
  *
  * Public because the module descriptor names it and the platform instantiates it
  * reflectively.
@@ -117,14 +98,16 @@ public class PinGuardErrorSubmitter internal constructor(
                 IssueReport(
                     message = events.first().message,
                     // Every event, not just the first: the dialog groups related
-                    // failures into one array, and reporting one of them while
-                    // telling the platform the batch was filed loses the rest with
-                    // nothing to show it happened.
+                    // failures into one array, and reporting one while telling the
+                    // platform the batch was filed loses the rest silently.
                     stackTrace = events.joinToString("\n\n") { it.throwableText },
                     userComment = additionalInfo,
                     environment = environment(pluginCoordinates()),
                 ),
             )
+            // NEW_ISSUE means the flow reached GitHub, not that an issue exists — the
+            // platform has no status for a hand-off, and FAILED would grey the button
+            // out while mislabelling a working report.
             SubmittedReportInfo(
                 url,
                 PinGuardBundle.message("error.report.link"),
@@ -136,6 +119,9 @@ public class PinGuardErrorSubmitter internal constructor(
             SubmittedReportInfo(SubmittedReportInfo.SubmissionStatus.FAILED)
         }
 
+        // Exactly once, on every path: returning true without answering leaves the
+        // platform's message marked as submitting and the Report button greyed out
+        // for that error for the rest of the session.
         consumer.consume(info)
         return true
     }
@@ -157,9 +143,6 @@ public class PinGuardErrorSubmitter internal constructor(
         }
         delivery.openIssueForm(prepared.url)
 
-        // "It opened a form I did not fill in" is the report a maintainer gets when
-        // this goes wrong; these three numbers distinguish the cases without asking
-        // the user to reproduce anything.
         LOG.info(
             "opened a github issue form (url=${prepared.url.length} bytes, " +
                 "trace=${report.stackTrace.length} chars, truncated=${prepared.truncated})",
@@ -169,13 +152,8 @@ public class PinGuardErrorSubmitter internal constructor(
 
     /**
      * The descriptor the platform injected, kept here rather than read back from
-     * [getPluginDescriptor].
-     *
-     * 2025.3 marks the whole `ErrorReportSubmitter` surface `@ApiStatus.OverrideOnly`
-     * — including, on the 2025.3 release build, the getter, which the Plugin
-     * Verifier then reports against this plugin. Later builds no longer annotate
-     * it, but the declared floor is the release build. Taking the value on the way
-     * in is what a subclass is meant to do anyway.
+     * [getPluginDescriptor], which the 2025.3 release build marks
+     * `@ApiStatus.OverrideOnly` and the Plugin Verifier reports against this plugin.
      */
     private var descriptor: PluginDescriptor? = null
 
@@ -187,9 +165,8 @@ public class PinGuardErrorSubmitter internal constructor(
     /**
      * The plugin's id and version, as the issue names them.
      *
-     * The descriptor arrives only in a running IDE, so it is absent everywhere
-     * else. Neither it nor its version carries a nullability annotation, which
-     * makes both silent NPE sites in Kotlin.
+     * The descriptor arrives only in a running IDE, and neither it nor its version
+     * carries a nullability annotation, which makes both silent NPE sites in Kotlin.
      */
     private fun pluginCoordinates(): String =
         "${descriptor?.pluginId?.idString ?: PLUGIN_ID} ${descriptor?.version ?: "unknown"}"

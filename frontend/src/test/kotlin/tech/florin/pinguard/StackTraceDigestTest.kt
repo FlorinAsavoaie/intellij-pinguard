@@ -6,8 +6,7 @@ import org.junit.jupiter.api.Test
 
 /**
  * The trace reader. What matters is that shortening a trace never costs a
- * `Caused by:` header, because that is where a wrapped exception keeps its root
- * cause.
+ * `Caused by:` header, where a wrapped exception keeps its root cause.
  */
 class StackTraceDigestTest {
 

@@ -22,9 +22,9 @@ internal object PlatformReportEnvironment {
                 plugin = plugin,
                 ide = appInfo.fullApplicationName,
                 build = appInfo.build.asString(),
-                // Not SystemInfo.getOsNameAndVersion(), which is deprecated on the
-                // 2025.3 floor and so would not compile here; and version() rather
-                // than the version field beside it, deprecated in turn.
+                // Not SystemInfo.getOsNameAndVersion(), nor the version field beside
+                // version(): both are deprecated on the 2025.3 floor, and this build
+                // treats warnings as errors.
                 os = "${OS.CURRENT} ${OS.CURRENT.version()}",
                 jvm = "${SystemInfo.JAVA_RUNTIME_VERSION} (${SystemInfo.JAVA_VENDOR})",
                 // Not Locale.getDefault(): with a language pack installed, the

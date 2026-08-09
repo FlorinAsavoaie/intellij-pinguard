@@ -11,9 +11,7 @@ import org.junit.jupiter.api.Test
  * constructor, against real pinned tabs in a real project.
  *
  * That constructor wires up [PlatformPinnedFiles], [PinGuardSettings] and
- * [MessagesConfirmationPrompt], none of which a fake selector exercises — so what
- * [PinnedTabCloseGuardTest] proves about the *decision* it also has to assume about
- * the *lookup*.
+ * [MessagesConfirmationPrompt], none of which a fake selector exercises.
  */
 internal class PinnedTabCloseGuardPlatformTest : RealEditorTestCase() {
 
@@ -41,9 +39,8 @@ internal class PinnedTabCloseGuardPlatformTest : RealEditorTestCase() {
 
     @Test
     fun `each file is judged on its own pin`() {
-        // Not a "Close All", which never reaches this extension point: each call is
-        // its own close, and one pinned tab must not colour the answer for the next
-        // file asked about.
+        // Each call is its own close: one pinned tab must not colour the answer for
+        // the next file asked about.
         val main = open("Main.kt")
         val other = open("Other.kt")
         pin(main)
@@ -76,10 +73,8 @@ internal class PinnedTabCloseGuardPlatformTest : RealEditorTestCase() {
     @Test
     fun `PinGuard is registered on the extension point the platform actually reads`() {
         // Everything else in this file builds a guard and calls it directly, which
-        // says nothing about whether the IDE ever asks it. The registration in
-        // tech.florin.pinguard.frontend.xml could be misspelled, or the file renamed
-        // so the whole module fails to load, and every other test here would still
-        // pass.
+        // says nothing about whether the IDE ever asks it: the registration could be
+        // misspelled, or the module fail to load entirely, and they would all pass.
         val registered = ExtensionPointName<VirtualFilePreCloseCheck>("com.intellij.virtualFilePreCloseCheck")
             .extensionList
 
@@ -92,8 +87,8 @@ internal class PinnedTabCloseGuardPlatformTest : RealEditorTestCase() {
 
     @Test
     fun `the platform's own checked close path honours the veto`() {
-        // closeFileWithChecks is what consults the extension point, so this is the
-        // one test that goes through the platform rather than around it.
+        // The one test that goes through the platform rather than around it:
+        // closeFileWithChecks is what consults the extension point.
         val pinned = open("Pinned.kt")
         pin(pinned)
 

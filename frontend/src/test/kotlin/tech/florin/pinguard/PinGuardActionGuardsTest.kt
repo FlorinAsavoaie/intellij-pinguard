@@ -39,11 +39,10 @@ internal class PinGuardActionGuardsTest {
     /**
      * The application-level guards the plugin installs for itself.
      *
-     * The plugin is really loaded in the test sandbox, so the first project any
-     * test opens runs [PinGuardCloseActions] and leaves every close action
-     * wrapped for the rest of the JVM. Tests that want to watch an install
-     * happen therefore have to put the platform's own actions back first — which
-     * is what an unload does anyway — and hand them over again afterwards.
+     * The plugin is really loaded in the test sandbox, so the first project any test
+     * opens leaves every close action wrapped for the rest of the JVM. Watching an
+     * install happen means putting the platform's own actions back first, and
+     * handing them over again afterwards.
      */
     private val installedByThePlugin: PinGuardActionGuards
         get() = ApplicationManager.getApplication().service()
@@ -131,10 +130,7 @@ internal class PinGuardActionGuardsTest {
 
     @Test
     fun `a guarded action keeps the label the platform gave it`() {
-        // replaceAction does not carry a presentation across, and a wrapper built on
-        // a bare AnAction starts with an empty one. Menus, Settings | Keymap and
-        // Find Action all render from the template presentation, so losing it shows
-        // up as unnamed entries rather than as anything failing.
+        // Losing it shows up as unnamed menu entries rather than as anything failing.
         val before = snapshot()
 
         // Guards against this test passing because everything is blank on both
@@ -159,13 +155,9 @@ internal class PinGuardActionGuardsTest {
 
     @Test
     fun `a guarded CloseContent falls back to its main-menu label in the tab popup`() {
-        // Pins down a known, deliberate cosmetic loss rather than a promise.
-        // CloseContent carries <override-text place="EditorTabPopup"/>, so the stock
-        // tab menu says "Close" where the main menu says "Close Tab". The wrapper
-        // cannot carry that across, so it keeps the main-menu label everywhere.
-        //
-        // If a supported way to carry overrides appears, this is the test that
-        // should start failing.
+        // Pins down a known, deliberate cosmetic loss rather than a promise: the
+        // wrapper cannot carry <override-text place="EditorTabPopup"/> across. If a
+        // supported way to do so appears, this is the test that should start failing.
         installed {
             val wrapper = requireNotNull(actions.getAction("CloseContent"))
             val inTabPopup = Presentation()
@@ -237,17 +229,13 @@ internal class PinGuardActionGuardsTest {
 
     @Test
     fun `CloseAllUnpinnedEditors is deliberately left alone`() {
-        // It already leaves pinned tabs alone, so wrapping it would ask about a
-        // close that was never going to touch a pin.
         assertFalse("CloseAllUnpinnedEditors" in GUARDED.keys)
         assertTrue(actions.getAction("CloseAllUnpinnedEditors") != null, "the action it defers to still exists")
     }
 
     @Test
     fun `the scoped Close family is deliberately left alone, because it excludes pins itself`() {
-        // These four never offer a pinned tab up in the first place, so guarding
-        // them bought nothing and cost a setAccessible call on a non-public
-        // platform method. GuardedCloseActionTest holds the platform to that.
+        // GuardedCloseActionTest holds the platform to that.
         val noLongerGuarded = listOf(
             "CloseAllToTheLeft",
             "CloseAllToTheRight",
@@ -269,18 +257,13 @@ internal class PinGuardActionGuardsTest {
 
     @Test
     fun `CloseEditor is deliberately left alone, because the extension point already covers it`() {
-        // It is the one action that consults virtualFilePreCloseCheck, so guarding
-        // it too would ask twice about the same close.
         assertFalse("CloseEditor" in GUARDED.keys)
         assertTrue(actions.getAction("CloseEditor") != null)
     }
 
     @Test
     fun `Terminal_CloseTab shares CloseContent's shortcut, which is how it takes Cmd+W`() {
-        // The terminal plugin declares `use-shortcut-of="CloseContent"`, so a
-        // terminal tab moved into the editor is closed by *this* action on the
-        // keystroke users think of as CloseContent's. If that binding ever goes,
-        // guarding this id stops buying anything and this test says so.
+        // If that binding ever goes, guarding this id stops buying anything.
         val terminalClose = requireNotNull(actions.getAction(TERMINAL_CLOSE_TAB)) {
             "'$TERMINAL_CLOSE_TAB' is not registered; the terminal plugin is missing from this test IDE"
         }
@@ -299,10 +282,8 @@ internal class PinGuardActionGuardsTest {
 
     @Test
     fun `Terminal_CloseTab promotes itself, which is why guarding CloseContent alone is not enough`() {
-        // This is the whole bug: on a shortcut both actions answer, the platform
-        // asks every ActionPromoter to reorder the candidates and then performs the
-        // first *enabled* one. Terminal.CloseTab puts itself in front, so PinGuard's
-        // wrapped CloseContent is never even consulted.
+        // On a shortcut both actions answer, the platform asks every ActionPromoter
+        // to reorder the candidates and performs the first *enabled* one.
         val terminalClose = requireNotNull(actions.getAction(TERMINAL_CLOSE_TAB))
         val closeContent = requireNotNull(actions.getAction("CloseContent"))
 
@@ -332,9 +313,9 @@ internal class PinGuardActionGuardsTest {
     @Test
     fun `a guarded Terminal_CloseTab is still a promoter, so it keeps winning the shortcut`() {
         // A wrapper that dropped the marker would hand the keystroke back to
-        // CloseContent. Both are guarded, so the user-visible outcome would survive
-        // — but which action runs would have moved, silently, as a side effect of
-        // wrapping. Preserve what the original carried.
+        // CloseContent. Both are guarded, so the user-visible outcome would survive —
+        // but which action runs would have moved, silently, as a side effect of
+        // wrapping.
         installed {
             val wrapper = requireNotNull(actions.getAction(TERMINAL_CLOSE_TAB))
 
@@ -373,9 +354,6 @@ internal class PinGuardActionGuardsTest {
 
     @Test
     fun `no guarded action carries both markers, which is why wrap reads them in order`() {
-        // PinGuardActionGuards.wrap has a variant per marker and none for the two
-        // together, so an action carrying both would silently lose one. Nothing the
-        // platform ships does — and this is what notices the day one starts.
         GUARDED.keys.mapNotNull { actions.getAction(it) }.forEach { original ->
             assertFalse(
                 original is LightEditCompatible && original is ActionPromoter,
@@ -387,12 +365,11 @@ internal class PinGuardActionGuardsTest {
 
     @Test
     fun `an action comes back from a round trip still answering its own shortcuts`() {
-        // dispose() empties each displaced action's shortcut set so that the
-        // replaceAction after it can assign the id's own quietly. That is only sound
-        // while replaceAction really does assign one. If it ever stops, this stops
-        // being a wash and starts stripping the keymap binding off the platform's
-        // close actions on every unload — so the day that changes, fail here rather
-        // than in a keymap nobody thinks to check.
+        // dispose() empties each displaced action's shortcut set so the replaceAction
+        // after it can assign the id's own quietly, which is sound only while
+        // replaceAction really does assign one. If it ever stops, the restore starts
+        // stripping keymap bindings off the platform's close actions on every unload
+        // — so fail here rather than in a keymap nobody thinks to check.
         val before = snapshot().mapValues { (_, action) -> action.shortcutSet.shortcuts.toList() }
 
         // Guards against passing because everything is unbound on both sides.
@@ -414,9 +391,6 @@ internal class PinGuardActionGuardsTest {
 
     @Test
     fun `Terminal_CloseSession is deliberately left alone, because it closes nothing`() {
-        // Ctrl+D only writes EOF to the shell. The tab that follows is closed by
-        // TerminalViewFileEditor on session termination, programmatically, which no
-        // action-layer guard can or should intercept.
         assertFalse("Terminal.CloseSession" in GUARDED.keys)
     }
 }

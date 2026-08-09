@@ -11,12 +11,11 @@ import org.junit.jupiter.api.Test
 /**
  * Settings | Editor | PinGuard.
  *
- * `BoundConfigurable` supplies `isModified`, `apply` and `reset` for free, but
- * only over bindings that actually round-trip. Each checkbox here reads and
- * writes the whole config (`settings.config = settings.config.copy(...)`), so
- * the two of them applying in sequence is a real thing to check rather than an
- * obvious one — as is the confirm box being disabled while the guard is off,
- * since a disabled cell still applies its value.
+ * `BoundConfigurable` supplies `isModified`, `apply` and `reset` for free, but only
+ * over bindings that actually round-trip — and each checkbox here reads and writes
+ * the whole config, so the two applying in sequence is worth checking. So is the
+ * confirm box being disabled while the guard is off, since a disabled cell still
+ * applies its value.
  */
 @TestApplication
 internal class PinGuardConfigurableTest {

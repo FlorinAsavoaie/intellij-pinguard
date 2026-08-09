@@ -18,19 +18,14 @@ import org.junit.jupiter.api.Test
 /**
  * Taking the guards off without the platform logging about it.
  *
- * Separate from [PinGuardActionGuardsTest], and holding a project open, for one
- * reason: `AnAction.setShortcutSet` only reaches the branch that logs once
- * [LoadingState.PROJECT_OPENED] has occurred, and a bare `@TestApplication` never
- * opens a project — so the same test written there passes whether or not the bug is
- * present. It cannot be left to run order either: `LoadingState` is a one-way latch
- * shared by the whole JVM, so a suite that happened to run a project-opening test
- * first would arm this one and a suite that did not would not.
+ * Separate from [PinGuardActionGuardsTest], and holding a project open, because
+ * `AnAction.setShortcutSet` only reaches the branch that logs once
+ * [LoadingState.PROJECT_OPENED] has occurred — under a bare `@TestApplication` the
+ * same test passes whether or not the bug is present. Run order cannot be relied on
+ * either: `LoadingState` is a one-way latch shared by the whole JVM.
  *
- * A bare [projectFixture] rather than [RealEditorTestCase], whose real
- * `FileEditorManagerImpl`, hand-built coroutine scope and long teardown exist to
- * make *editors* testable. Nothing here opens a file. What this needs from a project
- * is only that opening one flips the latch, and the assertion below says so out
- * loud rather than trusting it.
+ * A bare [projectFixture] rather than [RealEditorTestCase], since nothing here
+ * opens a file; all this needs from a project is that opening one flips the latch.
  */
 @TestApplication
 @TestFixtures
@@ -46,10 +41,8 @@ internal class PinGuardActionGuardsPlatformTest {
     /**
      * The plugin is really loaded in the test sandbox, so opening a project runs
      * [PinGuardCloseActions] and leaves every close action already wrapped. A fresh
-     * [PinGuardActionGuards] would then find wrappers, skip them all, and have
-     * nothing recorded to restore — so the test would dispose an empty map and prove
-     * nothing. Handing the platform's own actions back first is what gives this test
-     * something to displace.
+     * [PinGuardActionGuards] would then skip them all and have nothing recorded to
+     * restore, so the test would dispose an empty map and prove nothing.
      */
     @BeforeEach
     fun openAProjectAndStartFromThePlatformsOwnActions() {
@@ -65,15 +58,6 @@ internal class PinGuardActionGuardsPlatformTest {
 
     @Test
     fun `restoring an action does not log the platform's global-shortcut complaint`() {
-        // `ActionManager.replaceAction` assigns the id's shortcut set to whatever it
-        // registers, and `AnAction.setShortcutSet` logs a PluginException against
-        // this plugin when the action it assigns to is registered under an id and
-        // already carries a set of its own. Installing never tripped it, because a
-        // fresh wrapper starts empty; restoring did — once per guarded action, on
-        // every unload and every IDE shutdown, with
-        // `PluginProblemReporterImpl is initialized during dispose` on top of the
-        // first when the container was already going down.
-
         // The latch the platform checks before it logs at all. Asserted rather than
         // assumed: if opening a project ever stops flipping it, this test stops being
         // able to fail, and silence would read as the bug being fixed.

@@ -22,11 +22,7 @@ internal object MessagesConfirmationPrompt : ConfirmationPrompt {
         return answer == Messages.YES
     }
 
-    /**
-     * The dialog title for [names].
-     *
-     * Internal so the wording can be asserted without putting a dialog on screen.
-     */
+    /** The dialog title for [names]. */
     internal fun titleFor(names: List<String>): String = if (names.size == 1) {
         PinGuardBundle.message("confirm.title")
     } else {
@@ -36,8 +32,6 @@ internal object MessagesConfirmationPrompt : ConfirmationPrompt {
     /**
      * The dialog body for [names]: a sentence for one file, otherwise a count and
      * a list of at most [MAX_LISTED] of them.
-     *
-     * Internal for the same reason as [titleFor].
      */
     internal fun messageFor(names: List<String>): String {
         if (names.size == 1) {

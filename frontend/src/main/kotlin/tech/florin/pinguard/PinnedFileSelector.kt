@@ -6,10 +6,8 @@ import com.intellij.openapi.vfs.VirtualFile
 internal data class PinnedFile(
     val file: VirtualFile,
     /**
-     * Labels of the editor windows that reported the pin; never empty.
-     *
-     * For the log only. A close refused because of a pin in a project the user is
-     * not currently looking at is otherwise indistinguishable from a bug.
+     * Labels of the editor windows that reported the pin; never empty. For the log
+     * only.
      */
     val pinnedIn: List<String>,
 ) {
@@ -21,11 +19,8 @@ internal data class PinnedFile(
  * Picks out the pinned tabs from a close request.
  *
  * Takes [CloseTarget]s rather than bare files because a pin belongs to one editor
- * window rather than to the file: whether a pin stands in a close's way depends on
+ * window rather than to the file: whether it stands in a close's way depends on
  * which window that close is aimed at.
- *
- * An interface so a test can hand back an answer — or a failure — without a
- * running IDE.
  */
 internal fun interface PinnedFileSelector {
     fun pinnedAmong(targets: List<CloseTarget>): List<PinnedFile>
@@ -34,9 +29,7 @@ internal fun interface PinnedFileSelector {
 /**
  * Asks the gate about a set of pinned tabs.
  *
- * Here rather than on [PinnedCloseGate] itself so the gate stays free of platform
- * types, and in one place rather than at each call site so the two callers cannot
- * describe the same pins differently in the log.
+ * An extension so [PinnedCloseGate] itself stays free of platform types.
  *
  * @return true if the close may proceed.
  */
