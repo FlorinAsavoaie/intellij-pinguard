@@ -127,7 +127,7 @@ the fix is one paste.
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for how to build and test the plugin, and
-for why it is put together the way it is.
+[ARCHITECTURE.md](ARCHITECTURE.md) for why it is put together the way it is.
 
 ## License
 
