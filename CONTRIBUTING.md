@@ -168,9 +168,34 @@ The guard code is identical in all of them — this is a packaging decision, not
 second implementation. A close action is guarded in the process that dispatches
 it, which is the only place the guard can work.
 
-The module is declared `loading="required"`. The default, `optional`, would skip
-a module whose dependencies did not resolve and leave PinGuard installed,
-enabled, and doing nothing — the exact failure this layout exists to rule out.
+The module is left at the default `loading="optional"`, and the temptation to
+write `loading="required"` is worth naming, because it looks like the stricter
+choice and is the wrong one. `required` fails the whole plugin wherever the
+module's dependencies do not resolve — and the third row of that table is a
+process where they never do, by design. Under it, `runIdeSplitMode` gives you:
+
+```
+Module intellij.platform.monolith    is not enabled because dependency intellij.platform.frontend is not available
+Module tech.florin.pinguard.frontend is not enabled because dependency intellij.platform.frontend is not available
+
+WARN - #c.i.i.p.PluginManager - Problems found loading plugins:
+  Plugin 'PinGuard' (tech.florin.pinguard) has dependency on 'intellij.platform.frontend' which is not installed
+```
+
+The first two lines are the split working. The platform disables its own
+`intellij.platform.monolith` for exactly the same reason and says nothing further
+about it; only PinGuard escalates, and the backend then refuses to load it at all.
+That is not cosmetic — in a real remote session the host serves plugins to the
+client, so a plugin the host will not load is a plugin the client never receives.
+
+What `required` was meant to catch — PinGuard installed, enabled and inert — is a
+monolith-only worry, and cannot happen there: `intellij.platform.frontend` always
+resolves in a monolithic IDE. The way to actually get it wrong in a monolith is
+the module jar name below, which `PluginDescriptorTest` asserts directly.
+
+Every bundled JetBrains plugin with a frontend module is packaged this way.
+`intellij.editorconfig.frontend` declares the same dependency with no `loading`
+attribute; compare its descriptor if this ever looks doubtful again.
 
 One packaging detail is load-bearing and easy to get wrong: the module jar must
 be named after the module. The platform resolves `<content>` by opening

@@ -5,6 +5,7 @@ import org.jdom.Element
 import org.junit.jupiter.api.Test
 import java.util.*
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -165,13 +166,17 @@ class PluginDescriptorTest {
     }
 
     @Test
-    fun `the module is required rather than optional`() {
-        // The default is optional, which means a module whose dependencies do not
-        // resolve is skipped silently, leaving PinGuard installed, enabled and
-        // inert.
+    fun `the module loads optionally rather than required`() {
+        // `loading="required"` fails the whole plugin wherever the module's
+        // dependencies do not resolve, and on a remote development backend they
+        // never do — that is what asking for `intellij.platform.frontend` means.
+        // The backend then refuses PinGuard outright rather than loading it inert,
+        // and in a real session a plugin the host will not load is a plugin the
+        // client is never served. Absent is the assertion: the attribute is not
+        // written at all, and the platform's default is optional.
         val module = descriptor.getChild("content").getChildren("module").single()
 
-        assertEquals("required", module.getAttributeValue("loading"))
+        assertNull(module.getAttributeValue("loading"), "the module is required again, which breaks split mode")
     }
 
     @Test
