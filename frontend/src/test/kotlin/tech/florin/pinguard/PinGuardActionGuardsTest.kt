@@ -386,6 +386,33 @@ internal class PinGuardActionGuardsTest {
     }
 
     @Test
+    fun `an action comes back from a round trip still answering its own shortcuts`() {
+        // dispose() empties each displaced action's shortcut set so that the
+        // replaceAction after it can assign the id's own quietly. That is only sound
+        // while replaceAction really does assign one. If it ever stops, this stops
+        // being a wash and starts stripping the keymap binding off the platform's
+        // close actions on every unload — so the day that changes, fail here rather
+        // than in a keymap nobody thinks to check.
+        val before = snapshot().mapValues { (_, action) -> action.shortcutSet.shortcuts.toList() }
+
+        // Guards against passing because everything is unbound on both sides.
+        assertTrue(
+            before.getValue("CloseContent").isNotEmpty(),
+            "CloseContent is unbound in this keymap, so this test would prove nothing",
+        )
+
+        installed { }
+
+        before.forEach { (id, shortcuts) ->
+            assertEquals(
+                shortcuts,
+                requireNotNull(actions.getAction(id)).shortcutSet.shortcuts.toList(),
+                "'$id' came back from a guard round trip answering different shortcuts",
+            )
+        }
+    }
+
+    @Test
     fun `Terminal_CloseSession is deliberately left alone, because it closes nothing`() {
         // Ctrl+D only writes EOF to the shell. The tab that follows is closed by
         // TerminalViewFileEditor on session termination, programmatically, which no

@@ -37,7 +37,9 @@ private val LOG: Logger = Logger.getInstance(GuardedCloseAction::class.java)
  *    the delegate's shortcut set; `ActionManager.replaceAction` then assigns the
  *    action id's own, and `AnAction.setShortcutSet` logs a `PluginException`
  *    against this plugin for that second assignment. Only the shortcut set was
- *    ever the problem, so the presentation is copied by hand below.
+ *    ever the problem, so the presentation is copied by hand below. Starting
+ *    empty is what buys the silence, which is why taking a guard back off has to
+ *    arrange the same state by hand — see `PinGuardActionGuards.surrenderShortcutSet`.
  *  - Per-place text overrides are not carried across. They live on the action
  *    rather than on its presentation, and every way to move them —
  *    `applyTextOverride`, which the verifier reports as internal, or

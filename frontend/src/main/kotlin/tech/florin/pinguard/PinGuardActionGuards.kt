@@ -5,6 +5,7 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionPromoter
 import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.CustomShortcutSet
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
 import java.util.concurrent.atomic.AtomicBoolean
@@ -149,7 +150,10 @@ public class PinGuardActionGuards : Disposable {
     override fun dispose() {
         try {
             val actions = ActionManager.getInstance()
-            displaced.forEach { (id, original) -> actions.replaceAction(id, original) }
+            displaced.forEach { (id, original) ->
+                surrenderShortcutSet(original)
+                actions.replaceAction(id, original)
+            }
         } catch (failure: Throwable) {
             rethrowIfUnrecoverable(failure)
             LOG.warn("could not restore the platform's close actions while unloading", failure)
@@ -158,6 +162,49 @@ public class PinGuardActionGuards : Disposable {
             // So a service that is disposed and used again installs afresh rather
             // than believing it already has.
             installed.set(false)
+        }
+    }
+
+    /**
+     * Empties [action]'s shortcut set so the [ActionManager.replaceAction] that
+     * follows can assign the id's own without the platform logging at us.
+     *
+     * `replaceAction` assigns the action id's shortcut set to whatever it registers,
+     * and `AnAction.setShortcutSet` logs a `PluginException` against this plugin
+     * whenever the action it assigns to is registered under an id *and* already
+     * carries a set that is not [CustomShortcutSet.EMPTY]. Installing is silent
+     * because a freshly built [GuardedCloseAction] starts empty — see the note on
+     * that class, which is where this was first paid for. Restoring is not: the
+     * original has carried the keymap's shortcuts since the IDE registered it, so
+     * the assignment on the way back out logs once per guarded action:
+     *
+     *     ShortcutSet of global AnActions should not be changed outside of
+     *     KeymapManager. Action: Close Tab (Close currently focused content)
+     *
+     * and the first of them, when it lands during application shutdown, drags
+     * `PluginProblemReporterImpl is initialized during dispose` along with it,
+     * because building that exception instantiates a service the container is busy
+     * tearing down.
+     *
+     * Handing the action back empty is what makes it symmetric: it goes into
+     * `replaceAction` in the same state a wrapper does, and comes out holding the
+     * shortcuts the id owns. Nothing is surrendered permanently — the assignment
+     * this defers to is the same one that gives the wrapper Cmd+W on the way in.
+     *
+     * Done here rather than by not restoring at all during shutdown, which would
+     * have quietened the logs by leaving a dynamic unload — the case [dispose] is
+     * for — logging exactly as before.
+     *
+     * The write is guarded on its own: a wrapper for one id must still be taken off
+     * even if this throws for another, and the shortcut set is not what makes the
+     * restore worth doing.
+     */
+    private fun surrenderShortcutSet(action: AnAction) {
+        try {
+            action.shortcutSet = CustomShortcutSet.EMPTY
+        } catch (failure: Throwable) {
+            rethrowIfUnrecoverable(failure)
+            LOG.warn("could not clear a displaced action's shortcut set before restoring it", failure)
         }
     }
 }
