@@ -24,9 +24,7 @@
 
     <p>Built for remote development and Code With Me: the guard ships as a
     frontend module so it loads in the JetBrains Client, where the editor tabs
-    and the close commands actually live, rather than only on the backend. This
-    layout has not yet been confirmed against a live remote session — if you use
-    PinGuard that way, reports are welcome.</p>
+    and the close commands actually live, rather than only on the backend.</p>
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
