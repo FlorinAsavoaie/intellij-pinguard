@@ -53,6 +53,8 @@ internal const val TERMINAL_CLOSE_TAB: String = "Terminal.CloseTab"
 internal val GUARDED: Map<String, CloseActionScope> = mapOf(
     "CloseContent" to SingleTabScope,
     "CloseAllEditors" to AllTabsScope,
+    // Wrapped for one of its two branches only; see [OtherTabsScope] for which,
+    // and why the other one is the platform's business rather than PinGuard's.
     "CloseAllEditorsButActive" to OtherTabsScope,
     TERMINAL_CLOSE_TAB to SingleTabScope,
 )

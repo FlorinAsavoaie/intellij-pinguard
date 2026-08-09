@@ -3,9 +3,9 @@
 An IntelliJ Platform plugin that keeps pinned editor tabs from being closed.
 
 Pinning a tab is a statement that you want to keep it open, but the IDE will
-still close it via **Close**, **Close All**, **Close Others**, the tab context
-menu or the keyboard shortcut. PinGuard refuses those closes — or asks first, if
-you prefer a safety net over a hard stop.
+still close it via **Close**, **Close All**, the tab context menu or the keyboard
+shortcut. PinGuard refuses those closes — or asks first, if you prefer a safety
+net over a hard stop.
 
 ## Settings
 
@@ -24,7 +24,8 @@ would have taken, rather than putting one dialog in front of you per tab.
 | What you do | What happens |
 | --- | --- |
 | <kbd>Cmd</kbd>+<kbd>W</kbd> / <kbd>Ctrl</kbd>+<kbd>F4</kbd>, tab menu → **Close** | Guarded by PinGuard. |
-| **Close All**, **Close Others** | Guarded by PinGuard. Every unpinned tab still closes. |
+| **Close All** | Guarded by PinGuard. Every unpinned tab still closes. |
+| **Close Others** | From the tab menu, or with the editor focused, it already leaves pinned tabs alone — the IDE does this itself. Guarded by PinGuard on the one path where the IDE does not: **Window \| Editor Tabs \| Close Others** with the focus in a tool window. |
 | **Close to the Left** / **Right**, **Close Unmodified**, **Close Readonly** | Already leave pinned tabs alone — the IDE does this itself. |
 | **Close All Unpinned Tabs** | Untouched. It does exactly what its name says. |
 | A terminal moved into the editor with **Move to Editor** and pinned | Guarded by PinGuard, including its own **Close Tab** — see below. |

@@ -109,12 +109,24 @@ close a user actually performs takes a different route:
 | What the user does | Action | Reaches the veto hook? | Guarded by PinGuard |
 | --- | --- | --- | --- |
 | <kbd>Cmd</kbd>+<kbd>W</kbd> / <kbd>Ctrl</kbd>+<kbd>F4</kbd>, tab menu → Close | `CloseContent` | no | yes |
-| Close All, Close Others | `CloseAllEditors`, `CloseAllEditorsButActive` | no | yes |
+| Close All | `CloseAllEditors` | no | yes |
+| Close Others | `CloseAllEditorsButActive` | no | on one of its two branches — see below |
 | Close to the Left / Right, Close Unmodified, Close Readonly | `CloseEditorsActionBase` subclasses | no | not needed — see below |
 
 So the guard sits on the actions instead. The extension point is still
 registered — it costs nothing, and it is the only close veto the platform offers —
 but it is not what does the work.
+
+Close Others is the split case. `CloseAllEditorsButActiveAction` branches on
+whether the event carries an `EditorWindow`, and only one of the two branches can
+reach a pinned tab. With a window — the tab's context menu, or anything invoked
+with the editor focused — it calls `EditorWindow.closeAllExcept`, which skips
+pinned files itself, so `OtherTabsScope` names no targets there and the action
+runs exactly as the IDE ships it. With no window — **Window | Editor Tabs | Close
+Others** while the focus is in a tool window, or the same action from Find
+Action — it closes each sibling through `FileEditorManagerEx.closeFile`, which has
+no pin check at all, and that is the branch the guard exists for. Both halves of
+that claim are read off the platform by a test rather than trusted.
 
 The last row is the one worth knowing about. Those four actions protect pinned
 tabs already: `CloseEditorsActionBase` consults `EditorComposite.isPinned` before
@@ -267,14 +279,19 @@ lookup reports nothing and a test built on it passes while exercising nothing.
 That is where the per-split behaviour, the project-wide fallbacks and the
 narrowed close are all pinned down.
 
-Two of those tests exist to catch the platform changing under the plugin rather
-than to check PinGuard's own logic: one asserts that the Close
+Some of those tests exist to catch the platform changing under the plugin rather
+than to check PinGuard's own logic. One asserts that the Close
 Left/Right/Unmodified/Readonly family still excludes pinned tabs by itself, which
-is the reason the plugin no longer guards those four at all, and one asserts that
+is the reason the plugin no longer guards those four at all. One asserts that
 PinGuard is really on the `virtualFilePreCloseCheck` extension point and that
-`closeFileWithChecks` really honours its veto. Both fail loudly rather than
-degrading quietly, which is the whole point of moving that reflection out of the
-plugin and into a test.
+`closeFileWithChecks` really honours its veto. Two more read the pair of calls
+Close Others branches between — `EditorWindow.closeAllExcept`, which skips pinned
+files, and `FileEditorManagerEx.closeFile`, which does not — because that
+asymmetry is the entire reason `OtherTabsScope` guards one branch and stands
+aside on the other, and either half of it changing should fail here rather than
+quietly leaving a close path guarded for nothing or unguarded for real. All of
+them fail loudly rather than degrading quietly, which is the whole point of
+moving that reflection out of the plugin and into a test.
 
 The one thing no unit test can settle is whether GitHub accepts a URL of a given
 size, since that depends on the cookies in the reporter's browser. The 4000-byte

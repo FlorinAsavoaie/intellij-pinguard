@@ -42,25 +42,19 @@ internal val SingleTabScope = CloseActionScope { event ->
 }
 
 /**
- * The two shapes every Close All variant has: one split's tabs when the event
- * names a window, and the selected file's siblings across the project when it does
- * not. Each caller supplies only what it keeps.
+ * The branch every Close All variant falls to when the event names no window: the
+ * selected file's siblings across the project, filtered by what the action keeps.
  *
- * @param inWindow given the window and every tab in it, the tabs to close.
- * @param projectWide given the selected file and its siblings, the tabs to close.
+ * @param keeping given the selected file and its siblings, the tabs to close.
  */
-private fun scopedTargets(
+private fun projectWideTargets(
     event: AnActionEvent,
-    inWindow: (EditorWindow, List<VirtualFile>) -> List<VirtualFile>,
-    projectWide: (selected: VirtualFile, siblings: Collection<VirtualFile>) -> List<VirtualFile>,
+    keeping: (selected: VirtualFile, siblings: Collection<VirtualFile>) -> List<VirtualFile>,
 ): List<CloseTarget>? {
-    val window = event.getData(EditorWindow.DATA_KEY)
-    if (window != null) return inWindow(window, window.fileList).map { CloseTarget(it, window) }
-
     val project = event.project ?: return null
     val manager = FileEditorManagerEx.getInstanceEx(project)
     val selected = manager.selectedFiles.firstOrNull() ?: return null
-    return projectWide(selected, manager.getSiblings(selected)).map { CloseTarget(it, null) }
+    return keeping(selected, manager.getSiblings(selected)).map { CloseTarget(it, null) }
 }
 
 /**
@@ -69,32 +63,40 @@ private fun scopedTargets(
  * branches are mirrored here from its own implementation.
  */
 internal val AllTabsScope = CloseActionScope { event ->
-    scopedTargets(
-        event,
-        inWindow = { _, tabs -> tabs },
-        projectWide = { _, siblings -> siblings.toList() },
-    )
+    val window = event.getData(EditorWindow.DATA_KEY)
+    if (window != null) {
+        window.fileList.map { CloseTarget(it, window) }
+    } else {
+        projectWideTargets(event) { _, siblings -> siblings.toList() }
+    }
 }
 
 /**
- * `CloseAllEditorsButActive`, mirrored from its implementation the same way as
- * [AllTabsScope] and for the same reason.
+ * `CloseAllEditorsButActive` — Close Others — on the one branch of it that can
+ * reach a pinned tab.
+ *
+ * The action has two, and only the second needs guarding:
+ *
+ *  - With an editor window in the event — the tab's context menu, or anything
+ *    invoked with the focus in the editor — it closes through
+ *    `EditorWindow.closeAllExcept`, which skips pinned files itself. A pinned tab
+ *    was never among the tabs that close would take, so this names no targets and
+ *    the action runs exactly as the IDE ships it.
+ *  - With no editor window — **Window | Editor Tabs | Close Others** while the
+ *    focus is in a tool window, or the same action from Find Action — it closes
+ *    each sibling through `FileEditorManagerEx.closeFile`, which has no pin check
+ *    at all. That is the branch guarded here.
+ *
+ * The empty list is not a null: to [GuardedCloseAction] both mean "run the
+ * original untouched", but "this close was never going to touch a pin" is a
+ * decision, where null is the absence of one.
  */
 internal val OtherTabsScope = CloseActionScope { event ->
-    val keep = event.getData(CommonDataKeys.VIRTUAL_FILE)
-
-    scopedTargets(
-        event,
-        // Pinned tabs are dropped here rather than left for the gate to catch,
-        // because `EditorWindow.closeAllExcept` — which is what this action
-        // runs — skips them itself. Counting them would raise a confirmation
-        // about tabs that were never going to close.
-        //
-        // `isFilePinned` is safe on this list: every file in it is by
-        // definition open in that window.
-        inWindow = { window, tabs -> tabs.filterNot { it == keep || window.isFilePinned(it) } },
-        // The project-wide branch keeps the selected file rather than `keep`,
-        // which is what the platform's own implementation does.
-        projectWide = { selected, siblings -> siblings.filterNot { it == selected } },
-    )
+    if (event.getData(EditorWindow.DATA_KEY) != null) {
+        emptyList()
+    } else {
+        // Keyed on the selected file rather than on the event's VIRTUAL_FILE,
+        // which is what the platform's own project-wide branch does.
+        projectWideTargets(event) { selected, siblings -> siblings.filterNot { it == selected } }
+    }
 }

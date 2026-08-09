@@ -176,10 +176,11 @@ internal class GuardedCloseActionTest : RealEditorTestCase() {
         runInEdtAndGetValue { window.isFileOpen(file) && window.isFilePinned(file) }
 
     @Test
-    fun `Close Others never asks about a pinned tab the platform was not going to close`() {
-        // `CloseAllEditorsButActiveAction` closes a window's tabs through
+    fun `Close Others in a window never asks, because the platform was not going to close the pin`() {
+        // In a window `CloseAllEditorsButActiveAction` closes through
         // `EditorWindow.closeAllExcept`, which skips pinned files on its own — so a
-        // pinned tab in that window is not one this action would have closed.
+        // pinned tab there is not one this action would have closed, and
+        // OtherTabsScope names no targets at all.
         val pinned = open("Pinned.kt")
         open("B.kt")
         val active = open("Active.kt")
@@ -199,6 +200,27 @@ internal class GuardedCloseActionTest : RealEditorTestCase() {
 
         assertEquals(0, asked, "the pinned tab was never in this close's way, so there was nothing to ask about")
         assertEquals(1, original.invocations, "and with nothing to protect the close goes to the platform untouched")
+    }
+
+    @Test
+    fun `closeAllExcept is what makes standing aside in a window safe`() {
+        // The platform contract the test above rests on, read by running it.
+        // `CloseAllEditorsButActiveAction` extends `AnAction` directly, so unlike
+        // the Close Left/Right family below there is no `getFilesToClose` to
+        // interrogate — but this is the one call its in-window branch makes. The day
+        // it stops skipping pins, OtherTabsScope must stop returning nothing there.
+        val pinned = open("Pinned.kt")
+        open("Loose.kt")
+        val active = open("Active.kt")
+        pin(pinned)
+
+        inEdt { mainWindow().closeAllExcept(active) }
+
+        assertEquals(
+            setOf("Pinned.kt", "Active.kt"),
+            openNames().toSet(),
+            "closeAllExcept closed a pinned tab; Close Others now needs guarding in a window too",
+        )
     }
 
     @Test
@@ -318,6 +340,10 @@ internal class GuardedCloseActionTest : RealEditorTestCase() {
 
     @Test
     fun `Close Others with no editor window keeps the selected tab and the pinned one`() {
+        // The branch that actually needs guarding: with no EditorWindow in the
+        // context — Window | Editor Tabs | Close Others with the focus in a tool
+        // window — the platform closes each sibling through
+        // FileEditorManagerEx.closeFile, which has no pin check of its own.
         val pinned = open("Pinned.kt")
         open("A.kt")
         val active = open("Active.kt")
@@ -330,6 +356,25 @@ internal class GuardedCloseActionTest : RealEditorTestCase() {
             setOf("Pinned.kt", "Active.kt"),
             openNames().toSet(),
             "project-wide, Close Others keeps the selected file — and the pin has to survive it",
+        )
+    }
+
+    @Test
+    fun `closeFile is what makes that windowless branch need guarding`() {
+        // The mirror of the closeAllExcept test above, and the reason this action is
+        // guarded at all. Without it, the test above would pass just as well if the
+        // platform protected pins on both branches, and the guard would be dead
+        // weight rather than the one thing between Window | Editor Tabs | Close
+        // Others and a pin. If this starts failing, OtherTabsScope can go entirely.
+        val pinned = open("Pinned.kt")
+        pin(pinned)
+
+        inEdt { manager.closeFile(pinned) }
+
+        assertEquals(
+            emptySet(),
+            openNames().toSet(),
+            "closeFile refuses a pinned tab now, so the windowless branch protects itself",
         )
     }
 

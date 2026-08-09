@@ -9,9 +9,9 @@
     <p>Keeps pinned editor tabs pinned.</p>
 
     <p>Pinning a tab says "I want to keep this open". The tab's own close button
-    respects that, but <em>Close</em> (Cmd+W / Ctrl+F4), <em>Close All</em>,
-    <em>Close Others</em> and the rest of the tab context menu will still close a
-    pinned tab. PinGuard takes pinned tabs out of those commands.</p>
+    respects that, but <em>Close</em> (Cmd+W / Ctrl+F4), <em>Close All</em> and
+    the rest of the tab context menu will still close a pinned tab. PinGuard takes
+    pinned tabs out of those commands.</p>
 
     <p>Prefer a safety net over a hard stop? Turn on
     <b>Settings | Editor | PinGuard | Ask for confirmation instead of blocking</b>
