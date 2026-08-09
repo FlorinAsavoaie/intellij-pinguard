@@ -93,6 +93,7 @@ jobs:
         with:
           name: test-results
           path: frontend/build/reports/tests/test
+          if-no-files-found: error
 
       - name: Verify plugin
         run: ./gradlew verifyPlugin
