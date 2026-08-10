@@ -81,9 +81,7 @@ the dependency, not a result anyone has measured.
 
 PinGuard is built for these. The guard ships as a frontend module, so it loads in
 the JetBrains Client — where your editor tabs and the close commands actually
-live — rather than only on the backend the plugin is installed on. This layout
-has not yet been confirmed against a live remote session; if you use PinGuard
-that way, reports are welcome.
+live — rather than only on the backend the plugin is installed on.
 
 ## Known gaps
 
@@ -103,7 +101,7 @@ settings, and the project whose window holds the pin — a pin in a project you 
 not looking at is the usual answer:
 
 ```
-INFO - #tech.florin.pinguard.PinnedCloseGate - BLOCK for [Main.kt] pinned in [acme-backend] (enabled=true, confirmInsteadOfBlock=false) -> allowed=false
+INFO - #tech.florin.pinguard.PinnedCloseGate - BLOCK for [Main.kt] pinned in [acme-backend] (enabled=true, confirmInsteadOfBlock=false) -> REFUSED
 ```
 
 For per-window detail, add `tech.florin.pinguard` under **Help | Diagnostic Tools
