@@ -21,6 +21,17 @@ CI runs `test`, `buildPlugin` and `verifyPlugin` on every pull request. Every bu
 that is not a release is version `0.0.0`, which is why the zip above is named that
 way: there is nothing to bump before a release and nothing to edit in `plugin.xml`.
 
+## Dependency updates
+
+Dependabot watches the Gradle build and the workflows weekly. Minor and patch bumps
+arrive grouped, one pull request per ecosystem; every major arrives on its own, so a
+breaking bump is reviewed by itself rather than hidden in a batch. Actions are pinned
+by commit SHA with the tag alongside, and Dependabot rewrites both.
+
+The IntelliJ Platform version is not one of them: `platformVersion` in
+`gradle.properties` is read through `providers.gradleProperty`, which Dependabot
+cannot see through, so bump it by hand.
+
 ## Making a change
 
 - `./gradlew test` and `./gradlew verifyPlugin` should both be green before you

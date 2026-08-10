@@ -1,0 +1,43 @@
+# Majors are absent from every group below on purpose. An update matching no
+# group is raised in a pull request of its own, which is what puts one breaking
+# bump in front of a reviewer at a time; minors and patches are grouped instead,
+# because a batch of them is one review rather than a dozen.
+version: 2
+
+updates:
+  # `/` reaches the frontend module too: the Gradle fetcher reads
+  # settings.gradle.kts and follows every `include`, so naming the subproject
+  # here as well would only duplicate what it already finds. What it does not
+  # reach is `platformVersion` in gradle.properties, which build.gradle.kts
+  # reads through `providers.gradleProperty` rather than interpolating into a
+  # dependency string — the IntelliJ Platform version is bumped by hand.
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+    # Ten rather than the default five, which one week of majors can exhaust on
+    # its own and then silently hold back everything behind them.
+    open-pull-requests-limit: 10
+    groups:
+      gradle-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # The workflows pin actions by commit SHA with the tag in a trailing comment;
+  # Dependabot rewrites both, so the pins stay readable without going back to
+  # floating tags.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      github-actions-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
