@@ -1,5 +1,8 @@
 # PinGuard
 
+[![JetBrains Marketplace](https://img.shields.io/jetbrains/plugin/v/33444?label=JetBrains%20Marketplace)](https://plugins.jetbrains.com/plugin/33444-pinguard)
+[![Downloads](https://img.shields.io/jetbrains/plugin/d/33444)](https://plugins.jetbrains.com/plugin/33444-pinguard)
+
 An IntelliJ Platform plugin that keeps pinned editor tabs from being closed.
 
 Pinning a tab is a statement that you want to keep it open, but the IDE will
