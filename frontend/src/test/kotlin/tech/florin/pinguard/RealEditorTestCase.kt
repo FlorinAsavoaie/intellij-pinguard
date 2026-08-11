@@ -4,7 +4,6 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.impl.NonBlockingReadActionImpl
 import com.intellij.openapi.application.runWriteAction
 import com.intellij.openapi.components.ComponentManagerEx
-import com.intellij.openapi.extensions.ExtensionPointName
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.FileEditorManagerKeys
 import com.intellij.openapi.fileEditor.ex.FileEditorProviderManager
@@ -13,12 +12,10 @@ import com.intellij.openapi.fileEditor.impl.EditorWindow
 import com.intellij.openapi.fileEditor.impl.FileEditorManagerImpl
 import com.intellij.openapi.fileEditor.impl.FileEditorOpenOptions
 import com.intellij.openapi.fileEditor.impl.FileEditorProviderManagerImpl
-import com.intellij.openapi.fileEditor.impl.text.TextEditorCustomizer
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.util.coroutines.childScope
-import com.intellij.testFramework.ExtensionTestUtil
 import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.testFramework.junit5.TestApplication
 import com.intellij.testFramework.junit5.fixture.TestFixtures
@@ -36,15 +33,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
-
-/**
- * The extension point the platform decorates a freshly built text editor from.
- *
- * Named as a string because the platform keeps its own [ExtensionPointName] for this
- * one out of reach.
- */
-private val TEXT_EDITOR_CUSTOMIZERS: ExtensionPointName<TextEditorCustomizer> =
-    ExtensionPointName("com.intellij.textEditorCustomizer")
 
 /**
  * A real project with a real [FileEditorManagerImpl], for the tests that cannot be
@@ -77,14 +65,6 @@ internal abstract class RealEditorTestCase {
             project.putUserData(FileEditorManagerKeys.ALLOW_IN_LIGHT_PROJECT, true)
             scope = (project as ComponentManagerEx).getCoroutineScope().childScope("pinguard tests")
             serviceDisposable = Disposer.newDisposable("pinguard test editor manager")
-            // Before the manager exists, so no editor is ever built with them: a
-            // customizer runs from a coroutine on the project's own scope, which is
-            // neither `scope` nor anything else this test can cancel. The one that
-            // matters is `CodeFloatingToolbar`, which registers itself under the
-            // `TextEditor` and holds that editor's project — so one arriving after
-            // the teardown has walked past its editor strands the project and fails
-            // the whole run in `LeakHunter`.
-            ExtensionTestUtil.maskExtensions(TEXT_EDITOR_CUSTOMIZERS, emptyList(), serviceDisposable)
             manager = FileEditorManagerImpl(project, scope)
             project.replaceService(FileEditorManager::class.java, manager, serviceDisposable)
         }
