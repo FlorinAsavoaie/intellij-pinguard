@@ -4,6 +4,8 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.impl.NonBlockingReadActionImpl
 import com.intellij.openapi.application.runWriteAction
 import com.intellij.openapi.components.ComponentManagerEx
+import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.FileEditorManagerKeys
 import com.intellij.openapi.fileEditor.ex.FileEditorProviderManager
@@ -115,9 +117,41 @@ internal abstract class RealEditorTestCase {
         // cancelling a scope both queue work with invokeLater, and draining any
         // earlier is draining before that work has been queued.
         drainTheEventQueue()
+        nameTheTestIfItLeftAnEditorBehind()
 
         PinGuardSettings.getInstance().config = PinGuardState()
     }
+
+    /**
+     * Fails the test that left an editor open, rather than the run that happened to
+     * finish last.
+     *
+     * An editor outliving its test holds `TextEditorImpl.project`, and the run then
+     * ends in [com.intellij.testFramework.LeakHunter] naming a project whose test is
+     * several classes behind — which says nothing about which test to look at. This
+     * says it. Pumped a few times first, since the closes that strand a project are
+     * queued by background tasks rather than by the close itself.
+     *
+     * A file open in two splits of one window layout is the shape that reaches this,
+     * and closing it leaves one of the two composites behind often enough to matter:
+     * roughly one CI run in ten, on `PlatformPinnedFilesTest` and on the one test in
+     * `GuardedCloseActionTest` that splits. Nothing here fixes that.
+     */
+    private fun nameTheTestIfItLeftAnEditorBehind() {
+        repeat(20) {
+            if (editorsOfThisProject().isEmpty()) return
+            runInEdtAndWait { PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue() }
+        }
+        drainTheEventQueue()
+
+        val left = editorsOfThisProject()
+        check(left.isEmpty()) {
+            "this test left ${left.map { it.virtualFile?.name }} open, so its project cannot be collected"
+        }
+    }
+
+    private fun editorsOfThisProject(): List<Editor> =
+        EditorFactory.getInstance().allEditors.filter { it.project === project }
 
     /**
      * Runs everything queued on the EDT, and whatever that queues in turn, so that
