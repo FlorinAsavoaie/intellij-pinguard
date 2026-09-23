@@ -9,7 +9,7 @@ import java.io.ByteArrayOutputStream
 import javax.inject.Inject
 
 plugins {
-    kotlin("jvm") version "2.4.10"
+    kotlin("jvm") version "2.4.20"
     id("org.jetbrains.intellij.platform")
 
     // Applied nowhere: this project keeps no changelog file for it to manage. It is
